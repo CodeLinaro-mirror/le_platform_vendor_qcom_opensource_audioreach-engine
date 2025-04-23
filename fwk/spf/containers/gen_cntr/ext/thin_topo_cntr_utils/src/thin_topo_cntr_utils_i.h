@@ -36,6 +36,11 @@ ar_result_t gen_cntr_switch_from_thin_topo_to_gen_topo_during_process(gen_cntr_t
                       cmn_port.sdata.flags.word);                                                                      \
    } while (0)
 
+<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
+gu_module_list_t *thin_topo_get_gen_topo_module_list_ptr(gen_topo_t *topo_ptr, gu_module_t *gu_module_ptr);
+
+=======
+>>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
 #ifdef __cplusplus
 }
 #endif //__cplusplus

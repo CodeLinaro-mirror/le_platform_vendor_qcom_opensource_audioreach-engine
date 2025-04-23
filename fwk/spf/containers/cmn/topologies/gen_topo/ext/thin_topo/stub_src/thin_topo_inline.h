@@ -59,7 +59,11 @@ static inline void thin_topo_count_and_decr_active_md_nodes(gen_topo_t *topo_ptr
    return;
 }
 
+<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
+static inline void thin_topo_check_get_gen_topo_next_proc_module(gen_topo_t *topo_ptr, gu_module_list_t **start_module_list_pptr)
+=======
 static inline void thin_topo_check_get_start_module(gen_topo_t *topo_ptr, gu_module_list_t **start_module_list_pptr)
+>>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
 {
    return;
 }

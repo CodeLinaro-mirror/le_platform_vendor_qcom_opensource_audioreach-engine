@@ -779,6 +779,78 @@ bool_t cu_has_upstream_frame_len_changed(cu_ext_in_port_upstream_frame_length_t 
    }
    return FALSE;
 }
+<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
+<<<<<<< HEAD
+=======
+
+static bool_t cu_is_ext_out_port_us_or_ds_rt(cu_base_t *base_ptr, gu_ext_out_port_t *ext_out_port_ptr)
+{
+   uint32_t is_downstream_realtime = FALSE;
+   uint32_t is_upstream_realtime   = FALSE;
+   base_ptr->topo_vtbl_ptr->get_port_property(base_ptr->topo_ptr,
+                                              TOPO_DATA_OUTPUT_PORT_TYPE,
+                                              PORT_PROPERTY_IS_UPSTREAM_RT,
+                                              (void *)ext_out_port_ptr->int_out_port_ptr,
+                                              &is_upstream_realtime);
+   base_ptr->topo_vtbl_ptr->get_port_property(base_ptr->topo_ptr,
+                                              TOPO_DATA_OUTPUT_PORT_TYPE,
+                                              PORT_PROPERTY_IS_DOWNSTREAM_RT,
+                                              (void *)ext_out_port_ptr->int_out_port_ptr,
+                                              &is_downstream_realtime);
+
+   return (is_downstream_realtime || is_upstream_realtime);
+}
+
+static bool_t cu_is_ext_in_port_us_or_ds_rt(cu_base_t *base_ptr, gu_ext_in_port_t *ext_in_port_ptr)
+{
+   uint32_t is_downstream_realtime = FALSE;
+   uint32_t is_upstream_realtime   = FALSE;
+
+   base_ptr->topo_vtbl_ptr->get_port_property(base_ptr->topo_ptr,
+                                              TOPO_DATA_INPUT_PORT_TYPE,
+                                              PORT_PROPERTY_IS_UPSTREAM_RT,
+                                              (void *)ext_in_port_ptr->int_in_port_ptr,
+                                              &is_upstream_realtime);
+   base_ptr->topo_vtbl_ptr->get_port_property(base_ptr->topo_ptr,
+                                              TOPO_DATA_INPUT_PORT_TYPE,
+                                              PORT_PROPERTY_IS_DOWNSTREAM_RT,
+                                              (void *)ext_in_port_ptr->int_in_port_ptr,
+                                              &is_downstream_realtime);
+
+   return (is_downstream_realtime || is_upstream_realtime);
+}
+
+/**
+ * cu is real time if
+ * any of its external ports is connected to an RT entity.
+ */
+bool_t cu_is_realtime(cu_base_t *base_ptr)
+{
+   base_ptr->flags.is_real_time = FALSE;
+   for (gu_ext_out_port_list_t *ext_out_port_list_ptr = base_ptr->gu_ptr->ext_out_port_list_ptr;
+        (NULL != ext_out_port_list_ptr);
+        LIST_ADVANCE(ext_out_port_list_ptr))
+   {
+      if (cu_is_ext_out_port_us_or_ds_rt(base_ptr, ext_out_port_list_ptr->ext_out_port_ptr))
+      {
+         base_ptr->flags.is_real_time = TRUE;
+         return TRUE;
+      }
+   }
+   for (gu_ext_in_port_list_t *ext_in_port_list_ptr = base_ptr->gu_ptr->ext_in_port_list_ptr;
+        (NULL != ext_in_port_list_ptr);
+        LIST_ADVANCE(ext_in_port_list_ptr))
+   {
+      if (cu_is_ext_in_port_us_or_ds_rt(base_ptr, ext_in_port_list_ptr->ext_in_port_ptr))
+      {
+         base_ptr->flags.is_real_time = TRUE;
+         return TRUE;
+      }
+   }
+   return FALSE;
+}
+>>>>>>> ca1c9b0 (fwk: Generic containers Thin topo extension enhancements)
+=======
 
 static bool_t cu_is_ext_out_port_us_or_ds_rt(cu_base_t *base_ptr, gu_ext_out_port_t *ext_out_port_ptr)
 {
@@ -846,3 +918,4 @@ bool_t cu_is_realtime(cu_base_t *base_ptr)
    }
    return FALSE;
 }
+>>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
