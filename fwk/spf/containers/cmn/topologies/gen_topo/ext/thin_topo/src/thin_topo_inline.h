@@ -37,10 +37,22 @@ static inline bool_t check_if_cntr_is_processing_with_thin_topo(gen_topo_t *topo
 
 #define THIN_TOPO_CHECK_IF_EXIT_FLAG_SET(topo_ptr, flag) (TRUE == topo_ptr->exit_flags.flag)
 
+#ifdef VERBOSE_DEBUGGING
+
+#define THIN_TOPO_SET_EXIT_FLAG(topo_ptr, flag, VALUE)                                                                 \
+   {                                                                                                                   \
+      topo_ptr->exit_flags.flag = VALUE;                                                                               \
+      TOPO_MSG(topo_ptr->gu.log_id, DBG_HIGH_PRIO, "THIN_TOPO_SET_EXIT_FLAG: updated " #flag "= %lu", VALUE);           \
+   }
+
+#else // !VERBOSE_DEBUGGING
+
 #define THIN_TOPO_SET_EXIT_FLAG(topo_ptr, flag, VALUE)                                                                 \
    {                                                                                                                   \
       topo_ptr->exit_flags.flag = VALUE;                                                                               \
    }
+
+#endif
 
 static inline void thin_topo_incr_active_md_nodes(gen_topo_t *topo_ptr, module_cmn_md_list_t *md_list_ptr)
 {
@@ -121,21 +133,12 @@ static inline void thin_topo_count_and_decr_active_md_nodes(gen_topo_t *topo_ptr
    }
 }
 
-<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
 static inline void thin_topo_check_get_gen_topo_next_proc_module(gen_topo_t *topo_ptr, gu_module_list_t **start_module_list_pptr)
 {
    // get the rest of module proc list ptr if the gen topo is called from the thin topo's exit context
    if (topo_ptr->thin_topo_ptr && (THIN_TOPO_SWITCHED_TO_GEN_TOPO != topo_ptr->thin_topo_ptr->state))
    {
       *start_module_list_pptr = topo_ptr->thin_topo_ptr->gen_topo_proc_next_module_list_ptr;
-=======
-static inline void thin_topo_check_get_start_module(gen_topo_t *topo_ptr, gu_module_list_t **start_module_list_pptr)
-{
-   // get the rest of module proc list ptr if the gen topo is called from the thin topo's exit context
-   if (topo_ptr->thin_topo_ptr && (THIN_TOPO_SWITCHED_TO_GEN_TOPO != topo_ptr->thin_topo_ptr->state))
-   {
-      *start_module_list_pptr = topo_ptr->thin_topo_ptr->rest_of_module_proc_list_ptr;
->>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
    }
 }
 
