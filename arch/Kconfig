@@ -1,0 +1,2 @@
+source arch/hexagon/Kconfig
+source arch/linux/Kconfig
