@@ -1,3 +1,4 @@
+ifeq ($(strip $(AUDIO_FEATURE_ARE_ON_APPS)),true)
 MY_LOCAL_PATH_ARE := $(call my-dir)
 
 BUILD_ARE_MODULES := $(MY_LOCAL_PATH_ARE)/scripts/make/spf_base.mk
