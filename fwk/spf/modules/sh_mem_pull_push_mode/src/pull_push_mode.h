@@ -143,6 +143,7 @@ typedef struct capi_pm_t
    uint32_t  pcm_bytes_written;
    uint32_t  batch_bytes_written;
 
+
 } capi_pm_t;
 
 /*------------------------------------------------------------------------
