@@ -139,7 +139,6 @@ typedef struct capi_pm_t
    /*header related parameter*/
    bool_t     is_header_enabled;
    bool_t     is_update_header;
-   bool_t is_pending_pos_buf_reset;
    uint32_t   header_type_flags;
    uint8_t    *header_buffer_ptr;
    uint32_t   header_buffer_size;
@@ -152,8 +151,7 @@ typedef struct capi_pm_t
    uint32_t  batch_bytes_written;
    // UTC timestamp handling
    capi_push_ts_data_t ts_data;
-   uint64_t  last_valid_timestamp; // tracks last valid timestamp received in current batch
-   
+
 } capi_pm_t;
 
 /*------------------------------------------------------------------------
