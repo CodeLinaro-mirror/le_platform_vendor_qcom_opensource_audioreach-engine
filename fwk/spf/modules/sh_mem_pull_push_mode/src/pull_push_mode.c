@@ -619,10 +619,21 @@ static capi_err_t push_mode_write_batch_header(capi_pm_t *me_ptr,
       local_offset += sizeof(sh_mem_push_mode_param_header_t);
 
       // Write timestamp payload
-      sh_mem_push_mode_timestamp_payload_t *ts_payload_ptr =
+      sh_mem_push_mode_timestamp_payload_t *ts_payload_ptr = 
          (sh_mem_push_mode_timestamp_payload_t *)&local_header_buf_ptr[local_offset];
-      ts_payload_ptr->timestamp_us_lsw = (uint32_t)(timestamp & 0xFFFFFFFF);
-      ts_payload_ptr->timestamp_us_msw = (uint32_t)(timestamp >> 32);
+
+      uint32_t utc_ts_lsw = (uint32_t)(timestamp & 0xFFFFFFFF);
+      uint32_t utc_ts_msw = (uint32_t)(timestamp >> 32);
+      PULL_PUSH_MSG(miid, DBG_LOW_PRIO,
+                    "PRE UTC timestamp: 0x%08x%08x",
+                    utc_ts_msw,
+                    utc_ts_lsw);
+
+      posal_query_utc_time_from_nw((void *)me_ptr->ts_data.utc_time_module_ptr, TIME_USEC);
+
+      posal_date_time_get_utc_time((void *)me_ptr->ts_data.utc_time_module_ptr, (posal_time)timestamp,TIME_USEC, &utc_ts_msw, &utc_ts_lsw);
+      ts_payload_ptr->timestamp_us_lsw = utc_ts_lsw;
+      ts_payload_ptr->timestamp_us_msw = utc_ts_msw;
       local_offset += sizeof(sh_mem_push_mode_timestamp_payload_t);
 
       PULL_PUSH_MSG(miid, DBG_LOW_PRIO,
@@ -792,7 +803,7 @@ capi_err_t push_mode_end_header_batch(capi_pm_t *_pif, uint64_t timestamp)
                  *capi_ptr->pcm_param_actual_size_ptr, *capi_ptr->pcm_param_padding_size_ptr, capi_ptr->batch_write_index);
 
    capi_ptr->is_update_header = TRUE;
-
+   capi_ptr->pcm_bytes_written = 0;
    return CAPI_EOK;
 }
 
@@ -820,8 +831,45 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
                     pos_buf_ptr);
       return CAPI_EFAILED;
    }
+   
+   // Deferred from algo reset: reset pos buffer now
+   if (capi_ptr->is_pending_pos_buf_reset)
+   {
+      PULL_PUSH_MSG(miid, DBG_HIGH_PRIO, "Applying deferred position buffer reset before new write");
+      if (NULL != me_ptr->shared_pos_buf_ptr) {
+         memset(me_ptr->shared_pos_buf_ptr, 0, sizeof(sh_mem_pull_push_mode_position_buffer_t));
+      }
+      me_ptr->next_read_index            = 0;
+      capi_ptr->is_pending_pos_buf_reset = FALSE;
+   }
 
-   uint64_t timestamp   = (*input)->flags.is_timestamp_valid ? (*input)->timestamp : posal_timer_get_time();
+    // Track last valid timestamp for invalid timestamp handling
+   if ((*input)->flags.is_timestamp_valid)
+   {
+      capi_ptr->last_valid_timestamp = (*input)->timestamp;
+   }
+
+   if (capi_ptr->is_header_enabled)
+   {
+      if (!(*input)->flags.is_timestamp_valid)
+      {
+         PULL_PUSH_MSG(miid, DBG_ERROR_PRIO,
+                     "Invalid timestamp detected, dropping frame with %lu bytes",
+                     module_buf_ptr[0].actual_data_len);
+
+         if (!capi_ptr->is_update_header && (capi_ptr->pcm_bytes_written > 0))
+         {
+            PULL_PUSH_MSG(miid, DBG_HIGH_PRIO,
+                        "Finalizing in-progress batch (pcm_bytes=%lu) before dropping invalid timestamp frame",
+                        capi_ptr->pcm_bytes_written);
+            push_mode_end_header_batch(capi_ptr, capi_ptr->last_valid_timestamp);
+         }
+
+         return CAPI_EOK;
+      }
+   }
+
+   uint64_t timestamp = (*input)->flags.is_timestamp_valid ? (*input)->timestamp : posal_timer_get_time();
    uint32_t write_index = pos_buf_ptr->index, temp_wr_ind;
 
    // input data not is not available, nothing to do
