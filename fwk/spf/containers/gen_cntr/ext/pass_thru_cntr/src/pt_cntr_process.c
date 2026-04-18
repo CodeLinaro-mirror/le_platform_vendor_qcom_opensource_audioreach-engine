@@ -2237,6 +2237,12 @@ ar_result_t pt_cntr_signal_trigger(cu_base_t *cu_ptr, uint32_t channel_bit_index
       GEN_CNTR_MSG(me_ptr->gc.topo.gu.log_id, DBG_ERROR_PRIO, "pt_cntr_signal_trigger: Signal Miss");
    }
 
+   if (me_ptr->gc.cu.cmd_msg.payload_ptr)
+   {
+      // if async command processing is going on then check for any pending event handling
+      gen_cntr_handle_fwk_events_in_data_path(&me_ptr->gc);
+   }
+
    /*clear the trigger signal */
    posal_signal_clear_inline(me_ptr->gc.st_module.trigger_signal_ptr);
 
