@@ -1,8 +1,8 @@
 /**
  * \file sprm_i.h
  * \brief Internal definitions and declarations for the OLC Satellite Graph Management
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef OLC_SGM_I_H

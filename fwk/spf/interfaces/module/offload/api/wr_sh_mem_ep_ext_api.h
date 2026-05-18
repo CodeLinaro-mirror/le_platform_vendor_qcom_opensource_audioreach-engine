@@ -5,8 +5,8 @@
  *           Write shared memory Endpoint module
  * 
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef WR_SH_MEM_EP_API_EXT_H_

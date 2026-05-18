@@ -4,8 +4,8 @@
  *     This file contains Satellite Graph Management functions
  *     for the service registry down-notification handler.
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include "sgm_i.h"

@@ -5,8 +5,8 @@
  *        API header for Integrated Resource Monitor (IRM) APIs to test framework.
  * 
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef _IRM_PVT_API_H_

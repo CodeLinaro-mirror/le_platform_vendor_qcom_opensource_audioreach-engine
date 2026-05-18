@@ -2,8 +2,8 @@
   @file alsa_device_driver.h
   @brief This file contains interface for alsa device driver
 
-  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-  SPDX-License-Identifier: BSD-3-Clause-Clear
+  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+  SPDX-License-Identifier: BSD-3-Clause
 ==============================================================================*/
 
 #ifndef _ALSA_DEVICE_DRIVER_H_

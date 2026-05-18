@@ -7,8 +7,8 @@
  *        Parameters required to be implemented by BT codec.
  *    This file defines a framework extension for BT codec.
  *
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifdef __cplusplus

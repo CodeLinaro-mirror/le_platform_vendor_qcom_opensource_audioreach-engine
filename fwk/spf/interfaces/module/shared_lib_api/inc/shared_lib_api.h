@@ -8,7 +8,7 @@
  *
  * \copyright
  *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #define SHARED_LIB_API__API_MAJOR_VERSION 1

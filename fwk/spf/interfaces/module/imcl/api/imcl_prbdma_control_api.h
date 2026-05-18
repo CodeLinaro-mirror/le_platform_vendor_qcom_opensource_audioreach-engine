@@ -5,8 +5,8 @@
  *     This file contains API's for the control link between Codec DMA and AAD module.
  *
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef _IMCL_PRBDMA_CONTROL_API_H_

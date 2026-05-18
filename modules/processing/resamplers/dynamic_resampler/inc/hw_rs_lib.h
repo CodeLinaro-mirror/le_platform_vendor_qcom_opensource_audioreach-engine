@@ -4,8 +4,8 @@
  @brief This file contains API's for allocating static variables needed for hw resampler
 
 /*=========================================================================
-Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-SPDX-License-Identifier: BSD-3-Clause-Clear
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+SPDX-License-Identifier: BSD-3-Clause
 ========================================================================= */
 
 #ifndef _HW_RS_LIB_H_

@@ -8,8 +8,8 @@
   Links (IMCL) betweeen Detection Modules (like Voice Wakeup) and DAM module
 */
 /*==========================================================================
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  * =========================================================================*/
 #include "imcl_fwk_intent_api.h"
 

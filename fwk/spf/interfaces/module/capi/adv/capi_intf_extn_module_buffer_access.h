@@ -8,8 +8,8 @@
  *        This allows use of the modules buffer directly in the framework without intermediate copy from
  *        module internal buffer to framework owned buffer, or vice versa.
  *
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifdef __cplusplus

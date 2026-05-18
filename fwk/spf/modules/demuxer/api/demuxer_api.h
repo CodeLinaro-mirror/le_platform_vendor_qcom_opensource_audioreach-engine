@@ -5,8 +5,8 @@
  *  	 demuxer_api.h: This file contains the Module Id, Param IDs and configuration
  * 
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef DEMUXER_API_H

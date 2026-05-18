@@ -5,8 +5,8 @@
  * \file cu_soft_timer_fwk_ext.h
  * \brief
  *  This file contains utility functions for FWK_EXTN_SOFT_TIMER
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 // clang-format on
 
