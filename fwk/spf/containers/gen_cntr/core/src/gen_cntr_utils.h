@@ -202,7 +202,6 @@ ar_result_t gen_cntr_cache_set_event_prop(gen_cntr_t *       me_ptr,
                                           topo_reg_event_t * event_cfg_payload_ptr,
                                           bool_t             is_register);
 
-bool_t gen_cntr_is_realtime(gen_cntr_t *me_ptr);
 bool_t gen_cntr_is_signal_triggered(gen_cntr_t *me_ptr);
 
 ar_result_t gen_cntr_apply_downgraded_state_on_output_port(cu_base_t *       cu_ptr,
@@ -281,6 +280,7 @@ ar_result_t gen_cntr_update_island_vote(gen_cntr_t *me_ptr, posal_pm_island_vote
 ar_result_t gen_cntr_check_and_vote_for_island_in_data_path_(gen_cntr_t *me_ptr);
 
 /** ------------------ **/
+uint32_t gen_cntr_assign_ext_in_buf_for_int_port(gen_topo_t *topo_ptr, gu_ext_in_port_t *gu_ext_in_port_ptr);
 uint32_t gen_cntr_aggregate_ext_in_port_delay_topo_cb(gen_topo_t *topo_ptr, gu_ext_in_port_t *gu_ext_in_port_ptr);
 uint32_t gen_cntr_aggregate_ext_out_port_delay_topo_cb(gen_topo_t *topo_ptr, gu_ext_out_port_t *gu_ext_out_port_ptr);
 uint32_t gen_cntr_get_additional_ext_in_port_delay_cu_cb(cu_base_t *base_ptr, gu_ext_in_port_t *gu_ext_in_port_ptr);
