@@ -6,7 +6,7 @@
  *
  *
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *  SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
@@ -94,7 +94,7 @@ static const cu_cntr_vtable_t olc_cntr_funcs = {
 
    .handle_proc_duration_change             = NULL,
    .update_path_delay                       = olc_cu_update_path_delay,
-   .aggregate_hw_acc_proc_delay             = NULL,
+   .aggregate_hw_acc_proc_delay             = olc_aggregate_hw_acc_proc_delay,
    .vote_against_island                     = NULL,
    .exit_island_temporarily                 = NULL,
    .get_additional_ext_in_port_delay_cu_cb  = olc_get_additional_ext_in_port_delay_cu_cb,
@@ -141,6 +141,7 @@ static const topo_to_cntr_vtable_t topo_to_olc_vtable = {
 
    .notify_ts_disc_evt                          = NULL,
    .module_buffer_access_event                  = NULL,
+   .check_if_any_ext_in_has_to_preserve_prebuffer = NULL,
 };
 
 // function table for response handling.
@@ -432,6 +433,8 @@ ar_result_t olc_destroy(olc_t *me_ptr)
    (void)cu_deregister_with_pm(&me_ptr->cu);
 
    sgm_deinit(&me_ptr->spgm_info);
+
+   cu_destroy_voice_info(&me_ptr->cu);
 
    TRY(result, cu_deinit(&me_ptr->cu));
 

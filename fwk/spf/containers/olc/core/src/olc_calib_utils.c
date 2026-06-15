@@ -457,26 +457,50 @@ ar_result_t olc_process_container_set_get_cfg(cu_base_t *                       
                      break;
                   }
 
-                  base_ptr->cntr_proc_duration = proc_dur_ptr->proc_duration_us;
+                  base_ptr->cntr_proc_duration                 = proc_dur_ptr->proc_duration_us;
+                  base_ptr->flags.is_cntr_proc_dur_set_paramed = TRUE;
+                  CU_SET_ONE_FWK_EVENT_FLAG(base_ptr, proc_dur_change);
+
+                  if (base_ptr->voice_info_ptr)
+                  {
+                     base_ptr->voice_info_ptr->safety_margin_us =
+                        MAX(proc_dur_ptr->safety_margin_us, proc_dur_ptr->proc_duration_us);
+                  }
 
                   CU_MSG(base_ptr->gu_ptr->log_id,
                          DBG_HIGH_PRIO,
-                         "Proc Duration (Scaled FS) %lu us set on the container",
-                         base_ptr->cntr_proc_duration);
+                         "Container Proc Duration %lu us set on the container, safety margin %lu us (max is chosen). "
+                         "voice info "
+                         "0x%p",
+                         base_ptr->cntr_proc_duration,
+                         proc_dur_ptr->safety_margin_us,
+                         base_ptr->voice_info_ptr);
+
+                  // todo : evaluate
+                  // result = base_ptr->cntr_vtbl_ptr->handle_proc_duration_change(base_ptr);
 
                   // result = base_ptr->cntr_vtbl_ptr->handle_thread_prio_change(base_ptr);
 
                   break;
                }
                case CNTR_PARAM_ID_CFG_SRC_MOD_DELAY_LIST:
-               case CNTR_PARAM_ID_DESTROY_SRC_MOD_DELAY_LIST:
-               case CNTR_PARAM_ID_VOICE_SESSION_INFO:
+               case CNTR_PARAM_ID_DESTROY_SRC_MOD_DELAY_LIST: //todo : review once again
                {
                   CU_MSG(base_ptr->gu_ptr->log_id,
                          DBG_ERROR_PRIO,
                          "Unsupported param-id 0x%lX",
                          param_data_ptr->param_id);
                   result = AR_EBADPARAM;
+                  break;
+               }
+               case CNTR_PARAM_ID_VOICE_SESSION_INFO:
+               {
+                  CU_MSG(base_ptr->gu_ptr->log_id,
+                         DBG_ERROR_PRIO,
+                         "voice param-id 0x%lX",
+                         param_data_ptr->param_id);
+                  // todo : check handling
+                  result = AR_EOK;
                   break;
                }
                case CNTR_PARAM_ID_GET_PROF_INFO:
@@ -488,6 +512,12 @@ ar_result_t olc_process_container_set_get_cfg(cu_base_t *                       
                case CNTR_PARAM_ID_DATA_PORT_MEDIA_FORMAT:
                {
             	   olc_cu_data_port_mf_rtm_enable(param_payload_ptr, param_data_ptr, base_ptr);
+                  param_data_ptr->error_code = result;
+                  break;
+               }
+               case CNTR_PARAM_ID_CONTAINER_PROC_PARAMS_INFO:
+               {
+                  result = cu_cntr_proc_params_query(base_ptr, param_payload_ptr, &param_data_ptr->param_size);
                   param_data_ptr->error_code = result;
                   break;
                }
@@ -790,21 +820,53 @@ ar_result_t olc_process_satellite_set_get_cfg(cu_base_t *                       
 
       case SPF_CFG_DATA_PERSISTENT:
       {
-         void **param_data_pptr = cfg_cmd_ptr->param_data_pptr;
-         void * param_data_ptr  = param_data_pptr[0];
-// tbd: add continuity check
+         void **                  param_data_pptr           = cfg_cmd_ptr->param_data_pptr;
+         int8_t *                 param_data_ptr            = param_data_pptr[0];
+         apm_module_param_data_t *module_param_data_ptr     = NULL;
+         uint32_t                 payload_size              = 0;
+         bool_t                   is_payload_mem_contiguous = TRUE;
+
+         for (uint32_t pid_cnt = 0; pid_cnt < cfg_cmd_ptr->num_param_id_cfg; pid_cnt++)
+         {
+            param_data_ptr        = param_data_pptr[pid_cnt];
+            module_param_data_ptr = (apm_module_param_data_t *)param_data_ptr;
+            payload_size          = sizeof(apm_module_param_data_t) + ALIGN_8_BYTES(module_param_data_ptr->param_size);
+            if ((pid_cnt + 1) < cfg_cmd_ptr->num_param_id_cfg)
+            {
+               int8_t *next_param_data_ptr = param_data_pptr[pid_cnt + 1];
+               if ((param_data_ptr + payload_size) != next_param_data_ptr)
+               {
+                  is_payload_mem_contiguous = FALSE;
+               }
+            }
+         }
 
 #ifdef OLC_VERBOSE_DEBUGGING
          OLC_MSG(me_ptr->topo.gu.log_id, DBG_HIGH_PRIO, "is_deregister = %u", is_deregister);
 #endif
-         TRY(result,
-             sgm_handle_persistent_cfg(&me_ptr->spgm_info,
-                                       param_data_ptr,
-                                       payload_size,
-                                       FALSE /*is_inband*/,
-                                       is_deregister,
-                                       cmd_extn_ptr));
-         wait_for_response = sgm_get_cmd_rsp_status(&me_ptr->spgm_info, opcode);
+         if ((1 == cfg_cmd_ptr->num_param_id_cfg) || (is_payload_mem_contiguous))
+         {
+            TRY(result,
+                sgm_handle_persistent_cfg(&me_ptr->spgm_info,
+                                          (void *)param_data_ptr,
+                                          payload_size,
+                                          FALSE /*is_inband*/,
+                                          is_deregister,
+                                          cmd_extn_ptr));
+            wait_for_response = sgm_get_cmd_rsp_status(&me_ptr->spgm_info, opcode);
+         }
+         else
+         {
+            TRY(result,
+                sgm_handle_persistent_cfg_v2(&me_ptr->spgm_info,
+                                             param_data_pptr,
+                                             cfg_cmd_ptr->num_param_id_cfg,
+                                             payload_size,
+                                             FALSE /*is_inband*/,
+                                             is_deregister,
+                                             cmd_extn_ptr));
+            wait_for_response = sgm_get_cmd_rsp_status(&me_ptr->spgm_info, opcode);
+         }
 
          break;
       }
