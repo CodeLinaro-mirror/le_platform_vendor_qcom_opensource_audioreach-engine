@@ -59,8 +59,14 @@ typedef union thin_topo_exit_flags_t
       uint32_t requires_module_looping:1;    // BIT 11
 
       // BIT 12-15
-      uint32_t has_sh_mem_ep_module:1;                      // BIT 12 - Thin topo doesnt support shared memory end point module's as of now
-      uint32_t has_to_preserve_prebuffer:1;
+      uint32_t has_unsupported_module : 1;
+      /* BIT 12 - set if any unsupported module is present, currently unsupported modules, AMDB_MODULE_TYPE_DECODER,
+       * AMDB_MODULE_TYPE_ENCODER,  AMDB_MODULE_TYPE_PACKETIZER, AMDB_MODULE_TYPE_DEPACKETIZER,
+       * MODULE_ID_WR_SHARED_MEM_EP, MODULE_ID_RD_SHARED_MEM_EP.
+       * it cant be supported because these modules might leave partial data after the process.
+       */
+
+      uint32_t has_to_preserve_prebuffer : 1;
       uint32_t num_active_md_nodes_in_cntr:8;  /**< Number of metadata currently present in the container, it can be in the cntr/topo/CAPI modules. */
 
       //uint32_t has_mixed_data_flow_states:1;
@@ -79,7 +85,6 @@ typedef union thin_topo_exit_flags_t
 typedef enum thin_topo_state_t
 {
    THIN_TOPO_SWITCHED_TO_GEN_TOPO                = 0,
-<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
    THIN_TOPO_EXITED_AT_PREPROCESS_EVENT_HANDLING = 1,
    THIN_TOPO_EXITED_AT_EXT_IN_BUFFER_SETUP       = 2,
    THIN_TOPO_EXITED_AT_MODULE_PROCESS_EVENTS     = 3,
@@ -98,23 +103,6 @@ typedef struct thin_topo_t
    /**< Whenever Thin topo is exited, this variable caches the next module that needs to processed from gen topo. Important to note that the list
         ptrs are different for thin topo and gen topo since they maintain separate module list's, hence this variable must be updated only with the
         gen topo's module list ptr. */
-=======
-   THIN_TOPO_EXITED_AT_EXT_IN_BUFFER_SETUP       = 1,
-   THIN_TOPO_EXITED_AT_EXT_OUT_BUFFER_SETUP      = 2,
-   THIN_TOPO_EXITED_AT_MODULE_PROCESS_EVENTS     = 3,
-   THIN_TOPO_EXITED_AT_OUTPUT_POST_PROCESS       = 4,
-   THIN_TOPO_ENTERED                             = 5,
-}thin_topo_state_t;
-
-typedef struct thin_topo_t
-{
-   gu_module_list_t                 *active_module_list_ptr; /**< subset of started_sorted_modue_list, but only includes modules from started-SG */
-   gu_ext_in_port_list_t             *active_ext_in_list_ptr; /**< only started ext in ports */
-   gu_ext_out_port_list_t            *active_ext_out_list_ptr; /**< only started ext out ports */
-
-   thin_topo_state_t                 state; /** indicates at what point of thin topo processing thin topo was exited. */
-   gu_module_list_t                 *rest_of_module_proc_list_ptr; /**< indicates if there has been a switch from thin topo to gen topo due to some event */
->>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
 }thin_topo_t;
 
 ar_result_t thin_topo_init_handle(gen_topo_t *topo_ptr);
@@ -123,12 +111,12 @@ void thin_topo_reset_handle(gen_topo_t *topo_ptr, bool_t free_handle_memory);
 void thin_topo_reset_signal_tgp_flag(gen_topo_t *topo_ptr);
 
 void thin_topo_update_exit_flags(gen_topo_t *topo_ptr,
-                           bool_t      has_voice_sg,
-                           bool_t      need_soft_timer_extn,
-                           bool_t      has_duty_cycling_module,
-                           bool_t      has_signal_tgp_module,
-                           bool_t      requires_module_looping,
-                           bool_t      has_sh_mem_ep_module);
+                                 bool_t      has_voice_sg,
+                                 bool_t      need_soft_timer_extn,
+                                 bool_t      has_duty_cycling_module,
+                                 bool_t      has_signal_tgp_module,
+                                 bool_t      requires_module_looping,
+                                 bool_t      has_unsupported_module);
 
 void thin_topo_destroy(gen_topo_t *topo_ptr);
 

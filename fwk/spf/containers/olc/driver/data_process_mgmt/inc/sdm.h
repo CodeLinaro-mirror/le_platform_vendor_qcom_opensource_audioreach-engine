@@ -335,6 +335,8 @@ typedef struct sdm_data_port_info_t
    uint32_t sat_rd_ep_opfs_bytes;
    /**< operating frame-size of the rd_ep in the satellite graph */
 
+   uint32_t buf_cnt;
+
    ipc_data_link_process_state_t data_link_ps;
 
 } sdm_data_port_info_t;
@@ -441,6 +443,14 @@ ar_result_t sgm_get_data_port_index_given_rw_client_miid(spgm_info_t *       spg
                                                          sdm_ipc_data_type_t data_type,
                                                          uint32_t            rw_client_miid,
                                                          uint32_t *          port_index_ptr);
+
+ar_result_t sgm_get_data_port_index_given_wr_client_miid(spgm_info_t *spgm_ptr,
+                                                         uint32_t     write_client_miid,
+                                                         uint32_t *   port_index_ptr);
+
+ar_result_t sgm_get_data_port_index_given_rd_client_miid(spgm_info_t *spgm_ptr,
+                                                         uint32_t     read_client_miid,
+                                                         uint32_t *   port_index_ptr);
 
 ar_result_t spdm_write_dl_pcd(spgm_info_t *spgm_ptr, uint32_t port_index);
 ar_result_t spdm_read_dl_pcd(spgm_info_t *spgm_ptr, uint32_t port_index);

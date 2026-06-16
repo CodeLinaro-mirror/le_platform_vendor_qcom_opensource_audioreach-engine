@@ -26,21 +26,19 @@ ar_result_t gen_cntr_switch_from_thin_topo_to_gen_topo_during_process(gen_cntr_t
       TOPO_MSG_ISLAND(topo_ptr->gu.log_id,                                                                             \
                       DBG_LOW_PRIO,                                                                                    \
                       " Module 0x%lX: " str1 " port id 0x%lx, assinged buffer " str2                                   \
-                      ": length_per_buf %lu of %lu. buff addr: 0x%p, origin:%lu Flags 0x%lx",                          \
+                      ": length_per_buf %lu of %lu. buff addr: 0x%p, nbufs:%lu origin:%lu Flags 0x%lx",             \
                       m_iid,                                                                                           \
                       port_id,                                                                                         \
                       cmn_port.bufs_ptr[0].actual_data_len,                                                            \
                       cmn_port.bufs_ptr[0].max_data_len,                                                               \
                       cmn_port.bufs_ptr[0].data_ptr,                                                                   \
+                      cmn_port.sdata.bufs_num,                                                                         \
                       cmn_port.flags.buf_origin,                                                                       \
                       cmn_port.sdata.flags.word);                                                                      \
    } while (0)
 
-<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
 gu_module_list_t *thin_topo_get_gen_topo_module_list_ptr(gen_topo_t *topo_ptr, gu_module_t *gu_module_ptr);
 
-=======
->>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
 #ifdef __cplusplus
 }
 #endif //__cplusplus

@@ -29,12 +29,14 @@
 
 #define MAX_MASTER_MAPS 5 // Can be tuned. Don't expect more than 1 or 2
 // as per today's requirement
-#define MAX_SATELLITE_DOMAINS 8 // ADSP,SDSP, MDSP, CDSP, APPS, APPS2 (one is master)
+#define MAX_SATELLITE_DOMAINS 10 // ADSP,SDSP, MDSP, CDSP, APPS, APPS2 (one is master)
 
 static const uint32_t satellite_domain_list[MAX_SATELLITE_DOMAINS] =
 {
          APM_PROC_DOMAIN_ID_MDSP,
-         APM_PROC_DOMAIN_ID_ADSP,
+         APM_PROC_DOMAIN_ID_ADSP, /** alias APM_PROC_DOMAIN_ID_ADSP_0 */
+         APM_PROC_DOMAIN_ID_ADSP_1,
+         APM_PROC_DOMAIN_ID_ADSP_2,
          APM_PROC_DOMAIN_ID_APPS,
          APM_PROC_DOMAIN_ID_SDSP,
          APM_PROC_DOMAIN_ID_CDSP,
@@ -672,7 +674,7 @@ ar_result_t apm_offload_unloaned_mem_deregister(uint32_t sat_domain_id, uint32_t
       return AR_EFAILED;
    }
    /*reset to INVALID VAL*/
-   APM_OFFLOAD_MEMSET(unloaned_book_ptr, sizeof(unloaned_map_t));
+   APM_OFFLOAD_MEMSET(&unloaned_book_ptr[idx], sizeof(unloaned_map_t));
    posal_mutex_unlock(g_offload_mem_mgr.map_mutex);
 
    AR_MSG(DBG_HIGH_PRIO,
