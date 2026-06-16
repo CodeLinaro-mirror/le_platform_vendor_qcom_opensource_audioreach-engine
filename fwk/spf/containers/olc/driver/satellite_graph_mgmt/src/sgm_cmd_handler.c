@@ -17,7 +17,7 @@ Static Function Definitions
 ========================================================================== */
 
 /* Function to handle the Satellite Graph Open command
- * - Analyze the GK MSG open payload to determine the size of OPEN payload
+ * - Analyze the SPF MSG open payload to determine the size of OPEN payload
  * - and then create the OPEN payload.
  * - Send the Payload to the satellite processor.
  */
@@ -431,6 +431,8 @@ ar_result_t sgm_handle_persistent_cfg(spgm_info_t *                     spgm_ptr
       return result;
    }
    cmd_header_ptr = (apm_cmd_header_t *)spgm_ptr->active_cmd_hndl_ptr->cmd_payload_ptr;
+   spgm_ptr->active_cmd_hndl_ptr->multi_max_resp_cnt = 1;
+   spgm_ptr->active_cmd_hndl_ptr->multi_rsp_cnt = 0;
 
    result = posal_memorymap_get_shmm_handle_and_offset_from_va_offset_map(apm_get_mem_map_client(),
                                                                           (uint32_t)param_data_ptr,
@@ -511,6 +513,7 @@ ar_result_t sgm_handle_persistent_cfg_v2(spgm_info_t *                     spgm_
    cmd_header_ptr = (apm_cmd_header_t *)spgm_ptr->active_cmd_hndl_ptr->cmd_payload_ptr;
    uint32_t token = posal_atomic_increment(spgm_ptr->token_instance);
    spgm_ptr->active_cmd_hndl_ptr->multi_max_resp_cnt = num_config;
+   spgm_ptr->active_cmd_hndl_ptr->multi_rsp_cnt = 0;
 
    uint32_t cmd_cnt = 0;
    for (cmd_cnt = 0; cmd_cnt < num_config; cmd_cnt++)

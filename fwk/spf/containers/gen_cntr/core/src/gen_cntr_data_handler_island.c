@@ -779,10 +779,22 @@ static ar_result_t gen_cntr_data_process_one_frame(gen_cntr_t *me_ptr)
    for (uint8_t i = 0; i < me_ptr->cu.gu_ptr->num_parallel_paths; i++)
    {
       gu_module_list_t *start_module_list_ptr = me_ptr->topo.started_sorted_module_list_ptr;
+<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
+<<<<<<< HEAD
+=======
+
+      // if there was switch from thin topo to gen topo get the module from
+      // which process needs to continue.
+      thin_topo_check_get_gen_topo_next_proc_module(&me_ptr->topo,
+                                                    &start_module_list_ptr);
+
+>>>>>>> ca1c9b0 (fwk: Generic containers Thin topo extension enhancements)
+=======
 
       // if there was switch from thin topo to gen topo get the module from which process needs to continue.
       thin_topo_check_get_start_module(&me_ptr->topo, &start_module_list_ptr);
 
+>>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
       if (0 == me_ptr->wait_mask_arr[i])
       {
          while (TRUE)

@@ -909,10 +909,20 @@ typedef union gen_topo_port_flags_t
                                                 GEN_TOPO_MF_PCM_UNPACKED_V2=0x2 indicates unpacked V2 */
 
       uint32_t       supports_buffer_resuse_extn: 2; /**< GEN_TOPO_MODULE_* bit mask */
+<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
+<<<<<<< HEAD
+=======
+#ifdef USES_THIN_TOPO
+      uint32_t       thin_topo_can_assign_ext_in_buffer:1;
+      uint32_t       thin_topo_can_assign_ext_out_buffer:1;
+#endif
+>>>>>>> ca1c9b0 (fwk: Generic containers Thin topo extension enhancements)
+=======
 #ifdef USES_THIN_TOPO
       uint32_t       thin_topo_can_assign_ext_in_buffer;
       uint32_t       thin_topo_can_assign_ext_out_buffer;
 #endif
+>>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
    };
    uint32_t          word;
 
