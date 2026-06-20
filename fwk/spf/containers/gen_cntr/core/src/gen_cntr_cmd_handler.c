@@ -547,6 +547,9 @@ ar_result_t gen_cntr_gpr_cmd(cu_base_t *base_ptr)
    INIT_EXCEPTION_HANDLING
    SPF_MANAGE_CRITICAL_SECTION
    gpr_packet_t *packet_ptr = (gpr_packet_t *)me_ptr->cu.cmd_msg.payload_ptr;
+   posal_pm_island_vote_t cached_island_vote;
+   // set with Exit condition as default
+   cached_island_vote.island_vote_type = PM_ISLAND_VOTE_EXIT;
 
    SPF_CRITICAL_SECTION_START(base_ptr->gu_ptr);
 
@@ -557,6 +560,14 @@ ar_result_t gen_cntr_gpr_cmd(cu_base_t *base_ptr)
                 packet_ptr->token,
                 cu_is_any_handle_rest_pending(base_ptr));
 
+   // fetch current container island voting status
+   cached_island_vote.island_vote_type = me_ptr->topo.flags.aggregated_island_vote;
+
+   /*vote against island in command context,
+     cntr will vote for island entry later
+     in the process context after processing two frames*/
+   gen_cntr_vote_against_island((void *)&me_ptr->cu);
+   
    switch (packet_ptr->opcode)
    {
       case AR_SPF_MSG_GLOBAL_SH_MEM:
@@ -618,6 +629,17 @@ ar_result_t gen_cntr_gpr_cmd(cu_base_t *base_ptr)
    SPF_CRITICAL_SECTION_END(base_ptr->gu_ptr);
 
    gen_cntr_handle_events_after_cmds(me_ptr, FALSE, result);
+
+   SPF_CRITICAL_SECTION_START(base_ptr->gu_ptr);
+   // check if caching was PM_ISLAND_VOTE_DONT_CARE,
+   // apply if current state is still PM_ISLAND_VOTE_EXIT.
+
+   if ((PM_ISLAND_VOTE_DONT_CARE == cached_island_vote.island_vote_type) &&
+       (PM_ISLAND_VOTE_EXIT == me_ptr->topo.flags.aggregated_island_vote))
+   {
+      gen_cntr_update_island_vote(me_ptr, cached_island_vote);
+   }
+   SPF_CRITICAL_SECTION_END(base_ptr->gu_ptr);
 
    return result;
 }

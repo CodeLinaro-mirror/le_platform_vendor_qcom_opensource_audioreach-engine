@@ -779,22 +779,12 @@ static ar_result_t gen_cntr_data_process_one_frame(gen_cntr_t *me_ptr)
    for (uint8_t i = 0; i < me_ptr->cu.gu_ptr->num_parallel_paths; i++)
    {
       gu_module_list_t *start_module_list_ptr = me_ptr->topo.started_sorted_module_list_ptr;
-<<<<<<< PATCH SET (a209c7 WIP: fwk: Generic containers Thin topo extension enhancement)
-<<<<<<< HEAD
-=======
 
       // if there was switch from thin topo to gen topo get the module from
       // which process needs to continue.
       thin_topo_check_get_gen_topo_next_proc_module(&me_ptr->topo,
                                                     &start_module_list_ptr);
 
->>>>>>> ca1c9b0 (fwk: Generic containers Thin topo extension enhancements)
-=======
-
-      // if there was switch from thin topo to gen topo get the module from which process needs to continue.
-      thin_topo_check_get_start_module(&me_ptr->topo, &start_module_list_ptr);
-
->>>>>>> BASE      (d9f4cb fwk: Update CAPI_PM logging (generic macro, priorities, MIID)
       if (0 == me_ptr->wait_mask_arr[i])
       {
          while (TRUE)
@@ -2044,4 +2034,31 @@ ar_result_t gen_cntr_clear_borrowed_ext_out_buffer_from_int_ports(gen_cntr_t    
    }
 
    return result;
+}
+
+void gen_cntr_check_and_send_prebuffers_util_(gen_cntr_t              *me_ptr,
+                                              gen_cntr_ext_out_port_t *ext_out_port_ptr,
+                                              spf_msg_data_buffer_t   *out_buf_ptr)
+{
+   // Exit and handle prebuffers only if port has requirement
+   if (cu_check_if_port_requires_prebuffers(&ext_out_port_ptr->cu))
+   {
+      gen_topo_exit_island_temporarily(&me_ptr->topo);
+      cu_handle_prebuffer(&me_ptr->cu,
+                          &ext_out_port_ptr->gu,
+                          out_buf_ptr,
+                          ext_out_port_ptr->cu.buf_max_size -
+                             (gen_topo_compute_if_output_needs_addtional_bytes_for_dm(&(me_ptr->topo),
+                                                                                      (gen_topo_output_port_t *)
+                                                                                         ext_out_port_ptr->gu
+                                                                                            .int_out_port_ptr)));
+   }
+   else
+   {
+      // if port didnt have prebuf requirement at data flow start, then we can mark sent= TRUE,
+      // If prebuf requriement changes after data flow start, no need to insert prebuffer since its going cause
+      // a glitch, if we need to handle scenario there we need to consider if media format changed
+      ext_out_port_ptr->cu.icb_info.is_prebuffer_sent = TRUE;
+   }
+   return;
 }
