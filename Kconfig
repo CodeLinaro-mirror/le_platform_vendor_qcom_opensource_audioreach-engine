@@ -6,3 +6,7 @@ rsource "fwk/spf/modules/Kconfig"
 rsource "fwk/spf/containers/Kconfig"
 rsource "fwk/platform/modules/Kconfig"
 rsource "fwk/platform/posal/Kconfig"
+<<<<<<< PATCH SET (10b241 apm: Updated config handling for enable and disable APM Mult)
+rsource "fwk/spf/apm/Kconfig"
+=======
+>>>>>>> BASE      (253afb Merge "fwk: enable compilation of ALSA source endpoint modul)
