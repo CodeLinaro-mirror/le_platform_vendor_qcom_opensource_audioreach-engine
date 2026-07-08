@@ -1,5 +1,5 @@
-# Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-# SPDX-License-Identifier: BSD-3-Clause-Clear
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause
 
 ## VARIABLES:
 #
@@ -13,7 +13,7 @@ set(AR_MINOR_VERSION 0)
 set(AR_PATCHLEVEL 0)
 set(NAME "AR")
 set(AR_VERSION "AR-${AR_MAJOR_VERSION}.${AR_MINOR_VERSION}-${AR_PATCHLEVEL}")
-cmake_minimum_required(VERSION 3.24)  
+cmake_minimum_required(VERSION 3.24)
 
 project(AR VERSION 1.0)
 set(H2XML "${PROJECT_SOURCE_DIR}/scripts/h2xml/h2xml")
@@ -37,7 +37,7 @@ if(ARSDK_BUILD_ENABLED)
     add_definitions(-DARSDK_BUILD_ENABLED)
 endif()
 
-if ((NOT ARCH MATCHES "^(hexagon)") AND (NOT ARCH MATCHES "^(linux)"))
+if ((NOT ARCH MATCHES "^(hexagon)") AND (NOT ARCH MATCHES "^(linux)") AND (NOT ARCH MATCHES "^(arm64)"))
    message(FATAL_ERROR
       "Please specify supported Architecture.\n")
 endif()
@@ -65,8 +65,8 @@ if (NOT CONFIG)
    set (CONFIG "defconfig")
 endif()
 
-message(STATUS "using ${PROJECT_SOURCE_DIR}/arch/${ARCH}/configs/${CONFIG} config")
-configure_file("${PROJECT_SOURCE_DIR}/arch/${ARCH}/configs/${CONFIG}" ${SPF_DOT_CONFIG_PATH} COPYONLY)
+message(STATUS "using ${PROJECT_SOURCE_DIR}/arch/${ARCH}/${VENDOR}/${CONFIG} config")
+configure_file("${PROJECT_SOURCE_DIR}/arch/${ARCH}/${VENDOR}/${CONFIG}" ${SPF_DOT_CONFIG_PATH} COPYONLY)
 
 include(scripts/cmake/spf.cmake)
 include(scripts/cmake/spf_build.cmake)
@@ -124,7 +124,7 @@ if ( ARCH MATCHES "^(hexagon)")
    set(TGT_SPECIFIC_FOLDER hexagon)
 endif()
 
-if ( ARCH MATCHES "^(linux)")
+if ( (ARCH MATCHES "^(linux)") OR (ARCH MATCHES "^(arm64)"))
    set(linux_INCLUDE
       ${PROJECT_SOURCE_DIR}/ar_osal/api
    )
@@ -151,6 +151,7 @@ include_directories(
    ${PROJECT_SOURCE_DIR}/fwk/api/ar_utils/
    ${PROJECT_SOURCE_DIR}/fwk/api/ar_utils/generic
    ${PROJECT_SOURCE_DIR}/fwk/platform/posal/inc/${TGT_SPECIFIC_FOLDER}/stringl
+   ${PROJECT_SOURCE_DIR}/fwk/platform/posal/inc/${TGT_SPECIFIC_FOLDER}/comdef
    ${PROJECT_SOURCE_DIR}/fwk/platform/posal/inc/${TGT_SPECIFIC_FOLDER}
    ${PROJECT_SOURCE_DIR}/fwk/platform/posal/inc
    ${hexagon_INCLUDE}
@@ -222,7 +223,7 @@ add_subdirectory(modules)
 #Read the list of libraries that were added using the global property
 get_property(spf_static_libs GLOBAL PROPERTY GLOBAL_SPF_LIBS_LIST)
 
-if ( ARCH MATCHES "^(linux)")
+if ( (ARCH MATCHES "^(linux)") OR (ARCH MATCHES "^(arm64)"))
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GPR REQUIRED IMPORTED_TARGET gpr)
 target_link_libraries(spf PUBLIC PkgConfig::GPR)
@@ -233,14 +234,11 @@ target_link_libraries(spf PUBLIC "$<LINK_GROUP:RESCAN,${spf_static_libs}>" "-Wl,
 # Install header APIs to support ARE on APPS. These APIs are needed by
 # audioreach-graphmgr (AGM) server to initialize audioreach-engine framework.
 file(GLOB POSAL_INC ./fwk/platform/posal/inc/*.h)
-file(GLOB_RECURSE POSAL_${TGT_SPECIFIC_FOLDER}_INC ./fwk/platform/posal/inc/${TGT_SPECIFIC_FOLDER}/*.h)
+file(GLOB POSAL_${TGT_SPECIFIC_FOLDER}_INC ./fwk/platform/posal/inc/${TGT_SPECIFIC_FOLDER}/*.h)
 set(HEADER_APIS
 	${POSAL_INC}
 	${POSAL_${TGT_SPECIFIC_FOLDER}_INC}
 	${PROJECT_SOURCE_DIR}/fwk/spf/utils/cmn/inc/spf_main.h
-	${PROJECT_SOURCE_DIR}/fwk/api/ar_utils/ar_defs.h
-	${PROJECT_SOURCE_DIR}/fwk/api/ar_utils/generic/ar_msg.h
-	${PROJECT_SOURCE_DIR}/fwk/api/ar_utils/ar_error_codes.h
 	)
 
 install (FILES ${HEADER_APIS} DESTINATION include)

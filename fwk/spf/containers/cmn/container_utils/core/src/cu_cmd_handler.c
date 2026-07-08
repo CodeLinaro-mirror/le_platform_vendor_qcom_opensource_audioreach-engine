@@ -6,7 +6,7 @@
  *
  *
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *  SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
@@ -98,6 +98,12 @@ static ar_result_t cu_set_cntr_params(cu_base_t *base_ptr,
          *error_code_ptr = result;
          break;
       }
+      case CNTR_PARAM_ID_CALIBRATION_OPS_DONE:
+      {
+         result          = cu_set_calibration_ops_done(base_ptr, param_payload_ptr, param_size_ptr);
+         *error_code_ptr = result;
+         break;
+      }
       case CNTR_PARAM_ID_PROC_DURATION:
       {
          if (*param_size_ptr < sizeof(cntr_param_id_proc_duration_t))
@@ -145,6 +151,12 @@ static ar_result_t cu_set_cntr_params(cu_base_t *base_ptr,
       case CNTR_PARAM_ID_DATA_PORT_MEDIA_FORMAT:
       {
          result          = cu_cntr_rtm_dump_data_port_media_fmt(base_ptr, param_payload_ptr, param_size_ptr);
+         *error_code_ptr = result;
+         break;
+      }
+      case CNTR_PARAM_ID_OFFLOAD_VOICE_SESSION_INFO:
+      {
+         result          = cu_offload_voice_session_cfg(base_ptr, param_payload_ptr, param_size_ptr);
          *error_code_ptr = result;
          break;
       }
@@ -1293,6 +1305,28 @@ ar_result_t cu_handle_prepare(cu_base_t *base_ptr, spf_msg_cmd_graph_mgmt_t *cmd
    // this also takes care of icb
    base_ptr->cntr_vtbl_ptr->port_data_thresh_change(base_ptr);
 
+   for (gu_ext_in_port_list_t *ext_in_port_list_ptr = base_ptr->gu_ptr->ext_in_port_list_ptr;
+           (NULL != ext_in_port_list_ptr);
+           LIST_ADVANCE(ext_in_port_list_ptr))
+   {
+         gu_ext_in_port_t *ext_in_port_ptr = (gu_ext_in_port_t *)ext_in_port_list_ptr->ext_in_port_ptr;
+
+         //If ICB info is sent when downstream container is not in start/prepare state, then it will get rejected.
+         //did_inform_us_of_frame_len_and_var_ip FLAG must be set to FALSE.
+         //So that when prepare is received on external input port it will enter cu_create_send_icb_info_msg_to_upstreams() and sends ICB info to create external buffers
+
+         if (gu_is_port_handle_found_in_spf_array(cmd_gmgmt_ptr->cntr_port_hdl_list.num_ip_port_handle,
+                 cmd_gmgmt_ptr->cntr_port_hdl_list.ip_port_handle_list_pptr,
+                 &ext_in_port_ptr->this_handle))
+         {
+             cu_ext_in_port_t *gu_ext_in_port_ptr =
+            (cu_ext_in_port_t *)(((uint8_t *)ext_in_port_ptr + base_ptr->ext_in_port_cu_offset));
+
+             gu_ext_in_port_ptr->prop_info.did_inform_us_of_frame_len_and_var_ip = FALSE;
+
+         }
+   }
+
    //handle_frame_len_change ensures that the ICB info is sent to upstream.
    //if frame-len is evaluated during threshold propagation then it will be sent inside "port_data_thresh_change"
    //if frame-len is not evaluated due to the absence of media format then need to send RT/voice-SId ICB info here.
@@ -1743,5 +1777,53 @@ ar_result_t cu_process_cmd_queue(cu_base_t *me_ptr)
 
    // reset the flag
    me_ptr->flags.apm_cmd_context = FALSE;
+   return result;
+}
+ar_result_t cu_handle_md_tracking_internal_event(cu_base_t *me_ptr, gpr_packet_t *packet_ptr, spf_cfg_data_type_t cfg_type)
+{
+   ar_result_t result            = AR_EOK;
+
+   // Validate packet pointer
+   if (NULL == packet_ptr)
+   {
+      CU_MSG(me_ptr->gu_ptr->log_id, DBG_ERROR_PRIO, "invalid packet_ptr received.");
+      return AR_EBADPARAM;
+   }
+
+   module_cmn_md_tracking_md_event_rsp_handle_t *tracking_event_ptr = GPR_PKT_GET_PAYLOAD(module_cmn_md_tracking_md_event_rsp_handle_t, packet_ptr);
+
+   switch (tracking_event_ptr->tracking_rsp_cfg)
+   {
+      case TRACKING_MD_EVENT_RSP_SET_CFG:
+      {
+
+         uint8_t *param_data_ptr = (uint8_t *)(tracking_event_ptr + 1);
+
+         result = cu_set_get_cfgs_packed_loop(me_ptr,
+                                              param_data_ptr,
+                                              packet_ptr->dst_port,
+                                              tracking_event_ptr->tracking_event_payload_size,
+                                              TRUE, /* is_set_cfg */
+                                              FALSE, /*is_out_of_band*/
+                                              FALSE, /*is_deregister*/
+                                              cfg_type);
+
+         CU_MSG(me_ptr->gu_ptr->log_id, DBG_HIGH_PRIO, "done tracking MD event with result %lu", result);
+
+         __gpr_cmd_free(packet_ptr);
+         break;
+
+      }
+      default:
+      {
+         result = CAPI_EBADPARAM;
+         CU_MSG(me_ptr->gu_ptr->log_id, DBG_ERROR_PRIO, "Unsupported Tracking event RSP CFG: %lu", tracking_event_ptr->tracking_rsp_cfg);
+
+         __gpr_cmd_free(packet_ptr);
+         break;
+      }
+   }
+
+
    return result;
 }

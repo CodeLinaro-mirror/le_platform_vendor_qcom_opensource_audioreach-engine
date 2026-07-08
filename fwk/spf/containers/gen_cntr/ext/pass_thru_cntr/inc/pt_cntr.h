@@ -43,11 +43,11 @@ typedef union pt_cntr_flags_t
 {
    struct
    {
-      uint64_t num_subgraphs_not_satisfied : 1; /**< set if no SGs are not as expected*/
-      uint64_t supports_md_propagation     : 1;
-      uint64_t processing_data_path_mf : 1;
+      uint32_t num_subgraphs_not_satisfied : 1; /**< set if no SGs are not as expected*/
+      uint32_t supports_md_propagation     : 1;
+      uint32_t processing_data_path_mf : 1;
    };
-   uint64_t word;
+   uint32_t word;
 } pt_cntr_flags_t;
 
 
@@ -68,10 +68,10 @@ typedef union pt_cntr_module_flags_t
 {
    struct
    {
-      uint64_t has_attached_module : 1;
-      uint64_t has_stopped_port : 1;
+      uint32_t has_attached_module : 1;
+      uint32_t has_stopped_port : 1;
    };
-   uint64_t word;
+   uint32_t word;
 } pt_cntr_module_flags_t;
 
 typedef struct pt_cntr_module_t
@@ -194,6 +194,7 @@ ar_result_t pt_cntr_create_module(gen_topo_t            *topo_ptr,
                                   gen_topo_graph_init_t *graph_init_data_ptr);
 ar_result_t pt_cntr_init_ext_in_port(void *base_ptr, gu_ext_in_port_t *gu_ext_port_ptr);
 ar_result_t pt_cntr_init_ext_out_port(void *base_ptr, gu_ext_out_port_t *gu_ext_port_ptr);
+ar_result_t pt_cntr_init_data_ports_post_async_create_finish(gen_topo_t *topo_ptr);
 
 ar_result_t pt_cntr_deinit_ext_in_port(void *base_ptr, gu_ext_in_port_t *gu_ext_port_ptr);
 

@@ -28,6 +28,7 @@ INCLUDE FILES FOR MODULE
 #else
 #include "test_util.h"
 #endif
+#include "dam_batch_metadata_api.h"
 
 // Important: Disabling code to bump up thread priority whenever position buffer gets updated.
 // Initially priority change was introduced for the thread to be able to update position buffer
@@ -68,12 +69,13 @@ static void pull_mode_update_pos_buffer(sh_mem_pull_push_mode_position_buffer_t 
 }
 
 capi_err_t pull_push_mode_watermark_levels_init(pull_push_mode_t *pm_ptr,
-                                                   uint32_t          num_water_mark_levels,
-                                                   event_cfg_sh_mem_pull_push_mode_watermark_level_t *water_mark_levels,
-                                                   uint32_t                                           heap_id)
+                                                uint32_t          num_water_mark_levels,
+                                                event_cfg_sh_mem_pull_push_mode_watermark_level_t *water_mark_levels,
+                                                uint32_t                                           heap_id)
 {
    uint32_t watermark_level_bytes = 0;
    pm_ptr->num_water_mark_levels  = num_water_mark_levels;
+   uint32_t miid                  = pm_ptr->miid;
 
    if (NULL != pm_ptr->water_mark_levels_ptr)
    {
@@ -89,18 +91,20 @@ capi_err_t pull_push_mode_watermark_levels_init(pull_push_mode_t *pm_ptr,
 
       if (NULL == pm_ptr->water_mark_levels_ptr)
       {
-         AR_MSG(DBG_ERROR_PRIO,
-                "pull_push_mode_watermark_levels_init: Failed to allocate memory for water mark events,"
-                "num_water_mark_levels: %d",
-                pm_ptr->num_water_mark_levels);
+         PULL_PUSH_MSG(miid,
+                       DBG_ERROR_PRIO,
+                       "pull_push_mode_watermark_levels_init: Failed to allocate memory for water mark events,"
+                       "num_water_mark_levels: %d",
+                       pm_ptr->num_water_mark_levels);
          return CAPI_ENOMEMORY;
       }
 
       for (uint32_t i = 0; i < pm_ptr->num_water_mark_levels; i++)
       {
-         AR_MSG(DBG_HIGH_PRIO,
-                "pull_push_mode_watermark_levels_init: Water Mark Level %lu bytes",
-                water_mark_levels[i].watermark_level_bytes);
+         PULL_PUSH_MSG(miid,
+                       DBG_HIGH_PRIO,
+                       "pull_push_mode_watermark_levels_init: Water Mark Level %lu bytes",
+                       water_mark_levels[i].watermark_level_bytes);
 
          watermark_level_bytes = water_mark_levels[i].watermark_level_bytes;
 
@@ -110,7 +114,7 @@ capi_err_t pull_push_mode_watermark_levels_init(pull_push_mode_t *pm_ptr,
          }
          else
          {
-            AR_MSG(DBG_ERROR_PRIO, "pull_push_mode_watermark_levels_init: Invalid water mark level.");
+            PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "pull_push_mode_watermark_levels_init: Invalid water mark level.");
             return CAPI_EFAILED;
          }
       }
@@ -125,13 +129,14 @@ capi_err_t pull_push_mode_init(pull_push_mode_t *pm_ptr, sh_mem_pull_push_mode_c
 
    if ((NULL == pm_ptr) || (NULL == init_ptr))
    {
-      AR_MSG(DBG_ERROR_PRIO, "pull_push_mode_init: Invalid params!");
+      PULL_PUSH_MSG(MIID_UNKNOWN, DBG_ERROR_PRIO, "pull_push_mode_init: Invalid params!");
       return CAPI_EBADPARAM;
    }
+   uint32_t miid = pm_ptr->miid;
 
    if ((0 != pm_ptr->pos_buf_mem_map_handle) || (0 != pm_ptr->circ_buf_mem_map_handle))
    {
-      AR_MSG(DBG_ERROR_PRIO, "pull_push_mode_init: already configured with circ buf or pos buf memories");
+      PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "pull_push_mode_init: already configured with circ buf or pos buf memories");
       return CAPI_EBADPARAM;
    }
 
@@ -149,39 +154,47 @@ capi_err_t pull_push_mode_init(pull_push_mode_t *pm_ptr, sh_mem_pull_push_mode_c
                                                                        TRUE, // decrement ref count in deinit
                                                                        &(pm_ptr->shared_pos_buf_ptr))))
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "pull_push_mode_init: Pos Buf Phy to Virt Failed, physical addr: %lx%lx, result: %d \n",
-             init_ptr->shared_pos_buf_addr_lsw,
-             init_ptr->shared_pos_buf_addr_msw,
-             result);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "pull_push_mode_init: Pos Buf Phy to Virt Failed, physical addr: %lx%lx, result: %d \n",
+                    init_ptr->shared_pos_buf_addr_lsw,
+                    init_ptr->shared_pos_buf_addr_msw,
+                    result);
       return CAPI_EFAILED;
    }
 
-   if (CAPI_FAILED(
-          result =
-             posal_memorymap_get_virtual_addr_from_shm_handle_v2(pm_ptr->mem_map_client,
-                                                                 pm_ptr->circ_buf_mem_map_handle,
-                                                                 init_ptr->shared_circ_buf_addr_lsw,
-                                                                 init_ptr->shared_circ_buf_addr_msw,
-                                                                 init_ptr->shared_circ_buf_size,
-                                                                 TRUE, // Need to decrement ref count to release the handle
-                                                                 &(pm_ptr->shared_circ_buf_start_ptr))))
+   if (CAPI_FAILED(result = posal_memorymap_get_virtual_addr_from_shm_handle_v2(pm_ptr->mem_map_client,
+                                                                                pm_ptr->circ_buf_mem_map_handle,
+                                                                                init_ptr->shared_circ_buf_addr_lsw,
+                                                                                init_ptr->shared_circ_buf_addr_msw,
+                                                                                init_ptr->shared_circ_buf_size,
+                                                                                TRUE, // Need to decrement ref count to
+                                                                                      // release the handle
+                                                                                &(pm_ptr->shared_circ_buf_start_ptr))))
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "pull_push_mode_init: Circ Buf Phy to Virt Failed, physical addr: %lx%lx, result: %d \n",
-             init_ptr->shared_circ_buf_addr_msw,
-             init_ptr->shared_circ_buf_addr_lsw,
-             result);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "pull_push_mode_init: Circ Buf Phy to Virt Failed, physical addr: %lx%lx, result: %d \n",
+                    init_ptr->shared_circ_buf_addr_msw,
+                    init_ptr->shared_circ_buf_addr_lsw,
+                    result);
       return CAPI_EFAILED;
    }
 
    pm_ptr->shared_circ_buf_size = init_ptr->shared_circ_buf_size;
 
-   AR_MSG(DBG_HIGH_PRIO, "pull_push_mode_init: pos buf addr: %lx", (uint32_t *)pm_ptr->shared_pos_buf_ptr);
+   PULL_PUSH_MSG(miid,
+                 DBG_HIGH_PRIO,
+                 "pull_push_mode_init: pos buf addr: %lx, miid: %d",
+                 (uint32_t *)pm_ptr->shared_pos_buf_ptr,
+                 pm_ptr->miid);
 
-   AR_MSG(DBG_HIGH_PRIO, "pull_push_mode_init: circ buf addr: %lx", (uint32_t *)pm_ptr->shared_circ_buf_start_ptr);
+   PULL_PUSH_MSG(miid,
+                 DBG_HIGH_PRIO,
+                 "pull_push_mode_init: circ buf addr: %lx",
+                 (uint32_t *)pm_ptr->shared_circ_buf_start_ptr);
 
-   AR_MSG(DBG_HIGH_PRIO, "pull_push_mode_init: circ buf size: %lu", pm_ptr->shared_circ_buf_size);
+   PULL_PUSH_MSG(miid, DBG_HIGH_PRIO, "pull_push_mode_init: circ buf size: %lu", pm_ptr->shared_circ_buf_size);
 
    // initialize the position buffer to zero
    memset(pm_ptr->shared_pos_buf_ptr, 0, sizeof(sh_mem_pull_push_mode_position_buffer_t));
@@ -190,32 +203,36 @@ capi_err_t pull_push_mode_init(pull_push_mode_t *pm_ptr, sh_mem_pull_push_mode_c
 
    if (CAPI_FAILED(result = pull_push_mode_check_buf_size(pm_ptr, &pm_ptr->media_fmt)))
    {
-	   AR_MSG(DBG_ERROR_PRIO, "pull_push_mode_deinit: releasing shared buffer.");
-	   pull_push_mode_deinit(pm_ptr);
-	   return result;
+      PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "pull_push_mode_deinit: releasing shared buffer.");
+      pull_push_mode_deinit(pm_ptr);
+      return result;
    }
 
    return result;
 }
 
-capi_err_t pull_push_mode_set_fwk_ext_inp_media_fmt(pull_push_mode_t *                      pm_ptr,
-                                                       fwk_extn_pcm_param_id_media_fmt_extn_t *extn_ptr)
+capi_err_t pull_push_mode_set_fwk_ext_inp_media_fmt(pull_push_mode_t                       *pm_ptr,
+                                                    fwk_extn_pcm_param_id_media_fmt_extn_t *extn_ptr)
 {
 
+   uint32_t miid = pm_ptr->miid;
    if ((16 != extn_ptr->bit_width) && (24 != extn_ptr->bit_width) && (32 != extn_ptr->bit_width))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: set param received bad param for bit_width %d", extn_ptr->bit_width);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "set param received bad param for bit_width %d",
+                    extn_ptr->bit_width);
       return CAPI_EBADPARAM;
    }
    if ((PCM_LSB_ALIGNED != extn_ptr->alignment) && (PCM_MSB_ALIGNED != extn_ptr->alignment))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: set param received bad param for alignment");
+      PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "set param received bad param for alignment");
       return CAPI_EBADPARAM;
    }
 
    if ((PCM_LITTLE_ENDIAN != extn_ptr->endianness) && (PCM_BIG_ENDIAN != extn_ptr->endianness))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: set param received bad param for endianness");
+      PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "set param received bad param for endianness");
       return CAPI_EBADPARAM;
    }
 
@@ -229,14 +246,15 @@ capi_err_t pull_push_mode_set_fwk_ext_inp_media_fmt(pull_push_mode_t *          
 capi_err_t pull_push_mode_check_buf_size(pull_push_mode_t *pm_ptr, pm_media_fmt_t *media_fmt_ptr)
 {
    uint32_t unit_size = (media_fmt_ptr->bits_per_sample >> 3) * media_fmt_ptr->num_channels;
-   //if media format is not received then unit_size will be zero.
-   //if shared buffer info is not received that buffer size will be zero.
+   // if media format is not received then unit_size will be zero.
+   // if shared buffer info is not received that buffer size will be zero.
    if ((0 != unit_size) && (0 != pm_ptr->shared_circ_buf_size) && (pm_ptr->shared_circ_buf_size % unit_size))
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "CAPI PM: Circular buffer size %lu is not a multiple of unit size %lu ",
-             pm_ptr->shared_circ_buf_size,
-             unit_size);
+      PULL_PUSH_MSG(pm_ptr->miid,
+                    DBG_ERROR_PRIO,
+                    "Circular buffer size %lu is not a multiple of unit size %lu ",
+                    pm_ptr->shared_circ_buf_size,
+                    unit_size);
       pm_ptr->is_disabled = TRUE;
       return CAPI_EFAILED;
    }
@@ -245,14 +263,14 @@ capi_err_t pull_push_mode_check_buf_size(pull_push_mode_t *pm_ptr, pm_media_fmt_
 }
 
 capi_err_t pull_push_mode_set_inp_media_fmt(pull_push_mode_t *pm_ptr,
-                                            media_format_t *  media_fmt_header,
-                                            pm_media_fmt_t *  dst_media_fmt_ptr)
+                                            media_format_t   *media_fmt_header,
+                                            pm_media_fmt_t   *dst_media_fmt_ptr)
 {
    payload_media_fmt_pcm_t *media_fmt = (payload_media_fmt_pcm_t *)(media_fmt_header + 1);
 
    if (CAPI_FAILED(capi_cmn_validate_client_pcm_media_format(media_fmt)))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: input media format has errors");
+      PULL_PUSH_MSG(pm_ptr->miid, DBG_ERROR_PRIO, "input media format has errors");
       return CAPI_EBADPARAM;
    }
 
@@ -274,7 +292,7 @@ capi_err_t pull_push_mode_set_inp_media_fmt(pull_push_mode_t *pm_ptr,
 
    memscpy(dst_media_fmt_ptr->channel_map,
            sizeof(dst_media_fmt_ptr->channel_map),
-		   channel_mapping,
+           channel_mapping,
            media_fmt->num_channels * sizeof(uint8_t));
 
    return CAPI_EOK;
@@ -283,44 +301,62 @@ capi_err_t pull_push_mode_set_inp_media_fmt(pull_push_mode_t *pm_ptr,
 bool_t pull_push_check_media_fmt_validity(pull_push_mode_t *pm_ptr)
 {
    pm_media_fmt_t *media_fmt = &pm_ptr->media_fmt;
+   uint32_t        miid      = pm_ptr->miid;
    if (((0 == media_fmt->num_channels) || (CAPI_MAX_CHANNELS_V2 < media_fmt->num_channels)))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: Check media fmt validity Fail, num_channels %d. Max channels: %lu", media_fmt->num_channels, CAPI_MAX_CHANNELS_V2);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Check media fmt validity Fail, num_channels %d. Max channels: %lu",
+                    media_fmt->num_channels,
+                    CAPI_MAX_CHANNELS_V2);
       return FALSE;
    }
 
    if ((0 == media_fmt->sample_rate) || (SAMPLE_RATE_384K < media_fmt->sample_rate))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: Check media fmt validity Fail sample rate %d", media_fmt->sample_rate);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Check media fmt validity Fail sample rate %d",
+                    media_fmt->sample_rate);
       return FALSE;
    }
 
    if (((16 != media_fmt->bit_width) && (24 != media_fmt->bit_width) && (32 != media_fmt->bit_width)))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: Check media fmt validity Fail bits_per_sample %d", media_fmt->bit_width);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Check media fmt validity Fail bits_per_sample %d",
+                    media_fmt->bit_width);
       return FALSE;
    }
 
    if ((PCM_LITTLE_ENDIAN != media_fmt->endianness) && (PCM_BIG_ENDIAN != media_fmt->endianness))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: Check media fmt validity Fail endianness %d", media_fmt->endianness);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Check media fmt validity Fail endianness %d",
+                    media_fmt->endianness);
       return FALSE;
    }
 
    if ((16 != media_fmt->bits_per_sample) && (24 != media_fmt->bits_per_sample) && (32 != media_fmt->bits_per_sample))
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "CAPI PM: Check media fmt validity Fail sample_word_size %d",
-             media_fmt->bits_per_sample);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Check media fmt validity Fail sample_word_size %d",
+                    media_fmt->bits_per_sample);
       return FALSE;
    }
 
    if ((PCM_LSB_ALIGNED != media_fmt->alignment) && (PCM_MSB_ALIGNED != media_fmt->alignment))
    {
-      AR_MSG(DBG_ERROR_PRIO, "CAPI PM: Check media fmt validity Fail alignment  %d ", media_fmt->alignment);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Check media fmt validity Fail alignment  %d ",
+                    media_fmt->alignment);
       return FALSE;
    }
-   AR_MSG(DBG_HIGH_PRIO, "CAPI PM: Check media fmt validity Pass");
+   PULL_PUSH_MSG(miid, DBG_HIGH_PRIO, "Check media fmt validity Pass");
    return TRUE;
 }
 
@@ -330,7 +366,7 @@ void pull_push_mode_deinit(pull_push_mode_t *pm_ptr)
    {
       // Release the shm by decrementing the ref count
 
-      if(0 != pm_ptr->mem_map_client)
+      if (0 != pm_ptr->mem_map_client)
       {
          posal_memorymap_shm_decr_refcount(pm_ptr->mem_map_client, pm_ptr->pos_buf_mem_map_handle);
          posal_memorymap_shm_decr_refcount(pm_ptr->mem_map_client, pm_ptr->circ_buf_mem_map_handle);
@@ -356,16 +392,18 @@ capi_err_t pull_mode_read_input(capi_t *_pif, capi_stream_data_t *input[], capi_
    capi_buf_t                              *module_buf_ptr = (capi_buf_t *)(*output)->buf_ptr;
    pull_push_mode_t                        *me_ptr         = &(capi_ptr->pull_push_mode_info);
    sh_mem_pull_push_mode_position_buffer_t *pos_buf_ptr    = me_ptr->shared_pos_buf_ptr;
-   int8_t *read_ptr;
+   int8_t                                  *read_ptr;
+   uint32_t                                 miid = me_ptr->miid;
 
    // module is disabled if the module driver was not initilized properly.
    // or if the shared buffer configuration is not set
    if (capi_ptr->pull_push_mode_info.is_disabled)
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "Module disabled circ buf addr:0x%lx pos buf addr:0x%lx",
-             me_ptr->shared_circ_buf_start_ptr,
-             pos_buf_ptr);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Module disabled circ buf addr:0x%lx pos buf addr:0x%lx",
+                    me_ptr->shared_circ_buf_start_ptr,
+                    pos_buf_ptr);
       return CAPI_EFAILED;
    }
 
@@ -378,7 +416,7 @@ capi_err_t pull_mode_read_input(capi_t *_pif, capi_stream_data_t *input[], capi_
       // in module buffer access mode, position buffer for the earlier read frame is updated in the next process
       // since the module buffer is expected to be held for an entire full.
       // todo: check if ok to raise event at this point. potentially hold the buffer for 1ms.
-      if(me_ptr->curr_shared_buf_ptr)
+      if (me_ptr->curr_shared_buf_ptr)
       {
          pull_push_mode_check_send_watermark_event(capi_ptr, pos_buf_ptr->index, curr_read_index);
          if (curr_read_index == me_ptr->shared_circ_buf_size)
@@ -395,12 +433,13 @@ capi_err_t pull_mode_read_input(capi_t *_pif, capi_stream_data_t *input[], capi_
       uint32_t bytes_available_to_output = me_ptr->shared_circ_buf_size - curr_read_index;
       if (module_buf_ptr[0].max_data_len > bytes_available_to_output)
       {
-         AR_MSG(DBG_ERROR_PRIO,
-                "pull_mode_read_input: Invalid buf size %lu, cannot find a contiguous frame circular buf size"
-                "%lu and read offset %lu",
-                module_buf_ptr[0].max_data_len,
-                me_ptr->shared_circ_buf_size,
-                curr_read_index);
+         PULL_PUSH_MSG(miid,
+                       DBG_ERROR_PRIO,
+                       "pull_mode_read_input: Invalid buf size %lu, cannot find a contiguous frame circular buf size"
+                       "%lu and read offset %lu",
+                       module_buf_ptr[0].max_data_len,
+                       me_ptr->shared_circ_buf_size,
+                       curr_read_index);
 
          // not assigning any buffer to the output
          me_ptr->curr_shared_buf_ptr = NULL;
@@ -412,7 +451,7 @@ capi_err_t pull_mode_read_input(capi_t *_pif, capi_stream_data_t *input[], capi_
 #ifndef DISABLE_CACHE_OPERATIONS
       if (CAPI_FAILED(result = posal_cache_invalidate_v2(&read_ptr, bytes_available_to_output)))
       {
-         AR_MSG(DBG_ERROR_PRIO, "pull_mode_read_input: Failure cache invalidate.");
+         PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "pull_mode_read_input: Failure cache invalidate.");
          return result;
       }
 #endif
@@ -463,7 +502,7 @@ capi_err_t pull_mode_read_input(capi_t *_pif, capi_stream_data_t *input[], capi_
 #ifndef DISABLE_CACHE_OPERATIONS
       if (CAPI_FAILED(result = posal_cache_invalidate_v2(&read_ptr, bytes_to_copy_now)))
       {
-         AR_MSG(DBG_ERROR_PRIO, "pull_mode_read_input: Failure cache invalidate.");
+         PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "pull_mode_read_input: Failure cache invalidate.");
          return result;
       }
 #endif
@@ -495,7 +534,7 @@ capi_err_t pull_mode_read_input(capi_t *_pif, capi_stream_data_t *input[], capi_
          if (CAPI_FAILED(result =
                             spf_intlv_to_deintlv(&input_scratch_buf, me_ptr->scratch_buf, num_channels, word_size)))
          {
-            AR_MSG(DBG_ERROR_PRIO, "pull_mode_read_input: Int - De-Int conversion failed");
+            PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "pull_mode_read_input: Int - De-Int conversion failed");
             return result;
          }
 
@@ -526,6 +565,248 @@ capi_err_t pull_mode_read_input(capi_t *_pif, capi_stream_data_t *input[], capi_
    return result;
 }
 
+static capi_err_t push_mode_write_batch_header(capi_pm_t *me_ptr,
+                                               uint32_t  *write_index_ptr,
+                                               uint64_t   timestamp)
+{
+   capi_err_t result = CAPI_EOK;
+
+   // Validate input parameters
+   if (NULL == me_ptr || NULL == write_index_ptr)
+   {
+      PULL_PUSH_MSG(MIID_UNKNOWN, DBG_ERROR_PRIO, "Invalid parameters for header write");
+      return CAPI_EBADPARAM;
+   }
+
+   uint32_t   miid   = me_ptr->pull_push_mode_info.miid;
+
+   // Validate header buffer is allocated
+   if (NULL == me_ptr->header_buffer_ptr || 0 == me_ptr->header_buffer_size)
+   {
+      PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "Header buffer not allocated");
+      return CAPI_EFAILED;
+   }
+
+   // Use pre-allocated buffer
+   uint8_t *local_header_buf_ptr = me_ptr->header_buffer_ptr;
+   uint32_t max_size = me_ptr->header_buffer_size;
+   uint32_t local_offset = 0;
+
+   // Clear buffer
+   memset(local_header_buf_ptr, 0, max_size);
+
+   // Save the starting write index to calculate DDR addresses later
+   uint32_t header_start_index = *write_index_ptr;
+
+   // 1. Write Batch Header - Sync Word
+   sh_mem_push_mode_batch_header_t *batch_hdr_ptr =
+      (sh_mem_push_mode_batch_header_t *)&local_header_buf_ptr[local_offset];
+   batch_hdr_ptr->sync_word = SH_MEM_PUSH_MODE_HEADER_SYNC_WORD;
+   local_offset += sizeof(sh_mem_push_mode_batch_header_t);
+
+   PULL_PUSH_MSG(miid, DBG_LOW_PRIO,
+                 "Batch header: sync_word=0x%x", batch_hdr_ptr->sync_word);
+
+   // 2. Write UTC Timestamp Parameter (if enabled)
+   if (me_ptr->header_type_flags & HEADER_TYPE_UTC_TIMESTAMP)
+   {
+      // Write parameter header
+      sh_mem_push_mode_param_header_t *ts_param_hdr_ptr =
+         (sh_mem_push_mode_param_header_t *)&local_header_buf_ptr[local_offset];
+      ts_param_hdr_ptr->param_id = PARAM_ID_HEADER_TYPE_UTC_TIMESTAMP;
+      ts_param_hdr_ptr->actual_size = sizeof(sh_mem_push_mode_timestamp_payload_t);
+      ts_param_hdr_ptr->padding_size = 0;  // No padding needed for timestamp
+      local_offset += sizeof(sh_mem_push_mode_param_header_t);
+
+      // Write timestamp payload
+      sh_mem_push_mode_timestamp_payload_t *ts_payload_ptr = 
+         (sh_mem_push_mode_timestamp_payload_t *)&local_header_buf_ptr[local_offset];
+
+      uint32_t utc_ts_lsw = (uint32_t)(timestamp & 0xFFFFFFFF);
+      uint32_t utc_ts_msw = (uint32_t)(timestamp >> 32);
+      PULL_PUSH_MSG(miid, DBG_LOW_PRIO,
+                    "PRE UTC timestamp: 0x%08x%08x",
+                    utc_ts_msw,
+                    utc_ts_lsw);
+
+      posal_query_utc_time_from_nw((void *)me_ptr->ts_data.utc_time_module_ptr, TIME_USEC);
+
+      posal_date_time_get_utc_time((void *)me_ptr->ts_data.utc_time_module_ptr, (posal_time)timestamp,TIME_USEC, &utc_ts_msw, &utc_ts_lsw);
+      ts_payload_ptr->timestamp_us_lsw = utc_ts_lsw;
+      ts_payload_ptr->timestamp_us_msw = utc_ts_msw;
+      local_offset += sizeof(sh_mem_push_mode_timestamp_payload_t);
+
+      PULL_PUSH_MSG(miid, DBG_LOW_PRIO,
+                    "UTC timestamp: 0x%08x%08x",
+                    ts_payload_ptr->timestamp_us_msw,
+                    ts_payload_ptr->timestamp_us_lsw);
+   }
+
+   // 3. Write PCM Data Parameter Header (size will be updated later)
+   sh_mem_push_mode_param_header_t *pcm_param_hdr_ptr =
+      (sh_mem_push_mode_param_header_t *)&local_header_buf_ptr[local_offset];
+   pcm_param_hdr_ptr->param_id = PARAM_ID_HEADER_TYPE_PCM_DATA;
+   pcm_param_hdr_ptr->actual_size = 0;  // Will be updated when batch ends
+   pcm_param_hdr_ptr->padding_size = 0; // Will be updated when batch ends
+
+
+   uint32_t pcm_param_actual_size_offset = (uint8_t*)&pcm_param_hdr_ptr->actual_size - local_header_buf_ptr;
+   uint32_t pcm_param_padding_size_offset = (uint8_t*)&pcm_param_hdr_ptr->padding_size - local_header_buf_ptr;
+
+   local_offset += sizeof(sh_mem_push_mode_param_header_t);
+
+   // Sanity check: ensure we didn't overflow the buffer
+   if (local_offset > max_size)
+   {
+      PULL_PUSH_MSG(miid, DBG_ERROR_PRIO,
+                    "Header size %d exceeds allocated size %d",
+                    local_offset, max_size);
+      return CAPI_EFAILED;
+   }
+
+   // 4. Write header to DDR with wrap-around handling
+   pull_push_mode_t *pm_ptr = &me_ptr->pull_push_mode_info;
+   uint32_t circ_buf_size = pm_ptr->shared_circ_buf_size;
+   uint32_t bytes_to_write = local_offset;
+   uint32_t current_write_index = *write_index_ptr;
+   uint32_t bytes_written = 0;
+
+   while (bytes_to_write)
+   {
+      // Calculate space available till end of buffer
+      uint32_t rem_lin_size = circ_buf_size - current_write_index;
+      uint32_t bytes_to_copy = MIN(bytes_to_write, rem_lin_size);
+
+      // Copy to DDR
+      memscpy(pm_ptr->shared_circ_buf_start_ptr + current_write_index,
+              bytes_to_copy,
+              &local_header_buf_ptr[bytes_written],
+              bytes_to_copy);
+
+      bytes_to_write -= bytes_to_copy;
+      bytes_written  += bytes_to_copy;
+
+      current_write_index = current_write_index + bytes_to_copy;
+      if (current_write_index >= pm_ptr->shared_circ_buf_size)
+      {
+         current_write_index = 0;
+      }
+   }
+
+   // 5. Calculate DDR indices with wrap-around
+   uint32_t param_actual_size_sh_mem_index =
+      (header_start_index + pcm_param_actual_size_offset) % circ_buf_size;
+   me_ptr->pcm_param_actual_size_ptr =
+      (uint32_t *)(pm_ptr->shared_circ_buf_start_ptr + param_actual_size_sh_mem_index);
+
+   uint32_t param_padding_sh_mem_index =
+      (header_start_index + pcm_param_padding_size_offset) % circ_buf_size;
+   me_ptr->pcm_param_padding_size_ptr =
+      (uint32_t *)(pm_ptr->shared_circ_buf_start_ptr + param_padding_sh_mem_index);
+
+
+   PULL_PUSH_MSG(miid, DBG_HIGH_PRIO,
+                 "Batch header written to DDR: size=%d bytes, start_index=%d, end_index=%d",
+                 bytes_written, *write_index_ptr, current_write_index);
+
+   PULL_PUSH_MSG(miid, DBG_LOW_PRIO,
+              "SH MEM: actual_size=0x%lx (index=%d), padding_size=0x%lx (index=%d)",
+              *me_ptr->pcm_param_actual_size_ptr, param_actual_size_sh_mem_index,
+              *me_ptr->pcm_param_padding_size_ptr, param_padding_sh_mem_index);
+
+   *write_index_ptr = current_write_index;
+   me_ptr->batch_bytes_written = local_offset;
+
+   return result;
+}
+
+capi_err_t push_mode_end_header_batch(capi_pm_t *_pif, uint64_t timestamp)
+{
+   capi_pm_t                               *capi_ptr       = (capi_pm_t *)_pif;
+   pull_push_mode_t                        *me_ptr         = &(capi_ptr->pull_push_mode_info);
+   uint32_t                                 rem_lin_size, temp_wr_ind, padding_bytes = 0;
+   int8_t                                  *write_ptr      = NULL;
+   sh_mem_pull_push_mode_position_buffer_t *pos_buf_ptr    = me_ptr->shared_pos_buf_ptr;
+   uint32_t                                 miid = me_ptr->miid;
+
+   // add padding bytes if write_index is not 4-byte aligned
+   uint32_t misaligned_bytes = capi_ptr->pcm_bytes_written % BYTE_FOR_HEADER_ALIGNMENT;
+
+   if(misaligned_bytes)
+   {
+      padding_bytes = BYTE_FOR_HEADER_ALIGNMENT - misaligned_bytes;
+
+      rem_lin_size = me_ptr->shared_circ_buf_size - capi_ptr->batch_write_index;
+
+      write_ptr = (int8_t *)(me_ptr->shared_circ_buf_start_ptr + capi_ptr->batch_write_index);
+      if(padding_bytes <= rem_lin_size)
+      {
+         memset(write_ptr, 0, padding_bytes);
+         capi_ptr->batch_write_index += padding_bytes;
+      }
+      else
+      {
+         PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "Padding bytes %d exceeds remaining linear memory %d, shared memory is not 4-byte aligned",
+                                              padding_bytes, rem_lin_size);
+
+         memset(write_ptr, 0, rem_lin_size);
+         capi_ptr->batch_write_index += rem_lin_size;
+      }
+
+      if (capi_ptr->batch_write_index >= me_ptr->shared_circ_buf_size)
+      {
+         capi_ptr->batch_write_index = 0;
+      }
+   }
+
+
+   // Update header size
+   *capi_ptr->pcm_param_actual_size_ptr = capi_ptr->pcm_bytes_written;
+   *capi_ptr->pcm_param_padding_size_ptr = padding_bytes;
+   capi_ptr->batch_bytes_written += (capi_ptr->pcm_bytes_written + padding_bytes);
+
+   temp_wr_ind = pos_buf_ptr->index;
+   write_ptr   = (int8_t *)(me_ptr->shared_circ_buf_start_ptr + temp_wr_ind);
+   rem_lin_size = me_ptr->shared_circ_buf_size - temp_wr_ind;
+
+   //cache flush now, check for watermark event and update index (Handle the wrap around case here)
+   if(capi_ptr->batch_bytes_written < rem_lin_size)
+   {
+#ifndef DISABLE_CACHE_OPERATIONS
+      posal_cache_flush_v2(&write_ptr, capi_ptr->batch_bytes_written);
+#endif
+      pull_push_mode_check_send_watermark_event(capi_ptr, temp_wr_ind, capi_ptr->batch_write_index);
+   }
+   else
+   {
+#ifndef DISABLE_CACHE_OPERATIONS
+      posal_cache_flush_v2(&write_ptr, rem_lin_size);
+#endif
+      pull_push_mode_check_send_watermark_event(capi_ptr, temp_wr_ind, me_ptr->shared_circ_buf_size);
+
+      if(0 != capi_ptr->batch_write_index)
+      {
+         write_ptr   = (int8_t *)(me_ptr->shared_circ_buf_start_ptr);
+         temp_wr_ind = 0;
+#ifndef DISABLE_CACHE_OPERATIONS
+         posal_cache_flush_v2(&write_ptr, capi_ptr->batch_bytes_written - rem_lin_size);
+#endif
+         pull_push_mode_check_send_watermark_event(capi_ptr, temp_wr_ind, capi_ptr->batch_write_index);
+      }
+   }
+
+   /** update position buffer with new index*/
+   pull_mode_update_pos_buffer(pos_buf_ptr, me_ptr->ist_priority, capi_ptr->batch_write_index , timestamp);
+
+   PULL_PUSH_MSG(miid, DBG_HIGH_PRIO,
+                 "Batch written actual bytes %lu, padding bytes %lu, next batch starts at index %d",
+                 *capi_ptr->pcm_param_actual_size_ptr, *capi_ptr->pcm_param_padding_size_ptr, capi_ptr->batch_write_index);
+
+   capi_ptr->is_update_header = TRUE;
+
+   return CAPI_EOK;
+}
+
 capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], capi_stream_data_t *output[])
 {
    capi_err_t                               result = CAPI_EOK;
@@ -536,20 +817,59 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
    pull_push_mode_t                        *me_ptr         = &(capi_ptr->pull_push_mode_info);
    sh_mem_pull_push_mode_position_buffer_t *pos_buf_ptr    = me_ptr->shared_pos_buf_ptr;
    capi_buf_t                               output_scratch_buf;
+   uint32_t                                 miid = me_ptr->miid;
 
    // module is disabled if the module driver was not initilized properly.
    // or if the shared buffer configuration is not set
    // todo: raise disable event and disable module.
    if (capi_ptr->pull_push_mode_info.is_disabled)
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "Module disabled circ buf addr:0x%lx pos buf addr:0x%lx",
-             me_ptr->shared_circ_buf_start_ptr,
-             pos_buf_ptr);
+      PULL_PUSH_MSG(miid,
+                    DBG_ERROR_PRIO,
+                    "Module disabled circ buf addr:0x%lx pos buf addr:0x%lx",
+                    me_ptr->shared_circ_buf_start_ptr,
+                    pos_buf_ptr);
       return CAPI_EFAILED;
    }
+   
+   // Deferred from algo reset: reset pos buffer now
+   if (capi_ptr->is_pending_pos_buf_reset)
+   {
+      PULL_PUSH_MSG(miid, DBG_HIGH_PRIO, "Applying deferred position buffer reset before new write");
+      if (NULL != me_ptr->shared_pos_buf_ptr) {
+         memset(me_ptr->shared_pos_buf_ptr, 0, sizeof(sh_mem_pull_push_mode_position_buffer_t));
+      }
+      me_ptr->next_read_index            = 0;
+      capi_ptr->is_pending_pos_buf_reset = FALSE;
+   }
 
-   uint64_t timestamp   = (*input)->flags.is_timestamp_valid ? (*input)->timestamp : posal_timer_get_time();
+    // Track last valid timestamp for invalid timestamp handling
+   if ((*input)->flags.is_timestamp_valid)
+   {
+      capi_ptr->last_valid_timestamp = (*input)->timestamp;
+   }
+
+   if (capi_ptr->is_header_enabled)
+   {
+      if (!(*input)->flags.is_timestamp_valid)
+      {
+         PULL_PUSH_MSG(miid, DBG_ERROR_PRIO,
+                     "Invalid timestamp detected, dropping frame with %lu bytes",
+                     module_buf_ptr[0].actual_data_len);
+
+         if (!capi_ptr->is_update_header && (capi_ptr->pcm_bytes_written > 0))
+         {
+            PULL_PUSH_MSG(miid, DBG_HIGH_PRIO,
+                        "Finalizing in-progress batch (pcm_bytes=%lu) before dropping invalid timestamp frame",
+                        capi_ptr->pcm_bytes_written);
+            push_mode_end_header_batch(capi_ptr, capi_ptr->last_valid_timestamp);
+         }
+
+         return CAPI_EOK;
+      }
+   }
+
+   uint64_t timestamp = (*input)->flags.is_timestamp_valid ? (*input)->timestamp : posal_timer_get_time();
    uint32_t write_index = pos_buf_ptr->index, temp_wr_ind;
 
    // input data not is not available, nothing to do
@@ -559,6 +879,10 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
       {
          me_ptr->curr_shared_buf_ptr = NULL;
          module_buf_ptr[0].data_ptr  = NULL;
+      }
+      if(capi_ptr->is_header_enabled)
+      {
+         write_index = capi_ptr->batch_write_index;
       }
    }
    else if (me_ptr->curr_shared_buf_ptr)
@@ -572,10 +896,12 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
       // check if fwk passed a diff buffer than shared by the module.
       if (module_buf_ptr[0].data_ptr != me_ptr->curr_shared_buf_ptr)
       {
-         AR_MSG(DBG_ERROR_PRIO,
-                "push_mode_write_output: Either fwk has returned a diff buffer 0x%lX than shared frame ptr 0X%lx",
-                module_buf_ptr[0].data_ptr,
-                me_ptr->curr_shared_buf_ptr);
+         PULL_PUSH_MSG(miid,
+                       DBG_ERROR_PRIO,
+                       "push_mode_write_output: Either fwk has returned a diff buffer 0x%lX than shared frame ptr "
+                       "0X%lx",
+                       module_buf_ptr[0].data_ptr,
+                       me_ptr->curr_shared_buf_ptr);
          return CAPI_EFAILED;
       }
 
@@ -583,12 +909,14 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
       bytes_to_copy = MIN(module_buf_ptr[0].actual_data_len, rem_lin_size);
       if (bytes_to_copy < module_buf_ptr[0].actual_data_len)
       {
-         AR_MSG(DBG_ERROR_PRIO,
-                "push_mode_write_output: current wr position %lu doesnt fit the input frame size %lu in circ buf "
-                "size %lu",
-                write_index,
-                bytes_to_copy,
-                me_ptr->shared_circ_buf_size);
+         PULL_PUSH_MSG(miid,
+                       DBG_ERROR_PRIO,
+                       "push_mode_write_output: current wr position %lu doesnt fit the input frame size %lu in circ "
+                       "buf "
+                       "size %lu",
+                       write_index,
+                       bytes_to_copy,
+                       me_ptr->shared_circ_buf_size);
          return CAPI_EFAILED;
       }
 #endif
@@ -597,10 +925,11 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
       // can happend only if there is some bug in the module
       if (write_ptr != module_buf_ptr[0].data_ptr)
       {
-         AR_MSG(DBG_ERROR_PRIO,
-                "push_mode_write_output: input ptr 0x%lx is different than shared frame ptr 0X%lx ",
-                module_buf_ptr[0].data_ptr,
-                write_ptr);
+         PULL_PUSH_MSG(miid,
+                       DBG_ERROR_PRIO,
+                       "push_mode_write_output: input ptr 0x%lx is different than shared frame ptr 0X%lx ",
+                       module_buf_ptr[0].data_ptr,
+                       write_ptr);
          return CAPI_EFAILED;
       }
 
@@ -615,7 +944,7 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
 #endif
 
       temp_wr_ind = write_index;
-      write_index +=bytes_copied;
+      write_index += bytes_copied;
       pull_push_mode_check_send_watermark_event(capi_ptr, temp_wr_ind, write_index);
       if (write_index >= me_ptr->shared_circ_buf_size)
       {
@@ -624,6 +953,32 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
    }
    else // buffer access extension is disabled.
    {
+      // Use batch_write_index for tracking within batch when headers enabled
+      if (capi_ptr->is_header_enabled && 0 != module_buf_ptr[0].actual_data_len)
+      {
+         // Write batch header at the start of a new batch (when headers enabled and not in middle of batch)
+         if (capi_ptr->is_update_header)
+         {
+            capi_ptr->pcm_bytes_written = 0;
+            // Initialize batch tracking
+            capi_ptr->batch_write_index = write_index;
+            if (CAPI_FAILED(result = push_mode_write_batch_header(capi_ptr, &capi_ptr->batch_write_index, timestamp)))
+            {
+               PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "Failed to write batch header");
+               return result;
+            }
+
+            capi_ptr->is_update_header = FALSE;
+
+            PULL_PUSH_MSG(miid, DBG_HIGH_PRIO,
+                          "Batch header written at index %d, PCM data starts at index %d",
+                          write_index, capi_ptr->batch_write_index);
+         }
+
+         write_index = capi_ptr->batch_write_index;
+
+      }
+
       uint32_t bytes_to_copy, bytes_copied = 0, bytes_copied_per_channel = 0, bytes_copied_per_channel_now = 0;
       while (module_buf_ptr[0].actual_data_len > 0)
       {
@@ -638,8 +993,12 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
             memscpy(write_ptr, bytes_to_copy, (module_buf_ptr[0].data_ptr + bytes_copied), bytes_to_copy);
 
 #ifndef DISABLE_CACHE_OPERATIONS
-            posal_cache_flush_v2(&write_ptr, bytes_to_copy);
+            if (!capi_ptr->is_header_enabled)
+            {
+               posal_cache_flush_v2(&write_ptr, bytes_to_copy);
+            }
 #endif
+
             module_buf_ptr[0].actual_data_len -= bytes_to_copy;
             bytes_copied += bytes_to_copy;
          }
@@ -650,7 +1009,7 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
 
             for (int32_t i = 0; i < me_ptr->media_fmt.num_channels; i++)
             {
-               me_ptr->scratch_buf[i].data_ptr        = module_buf_ptr[i].data_ptr + bytes_copied_per_channel;
+               me_ptr->scratch_buf[i].data_ptr = module_buf_ptr[i].data_ptr + bytes_copied_per_channel;
 
                // all chs must have same len, as an optimization just access first ch lens only
                me_ptr->scratch_buf[i].actual_data_len = module_buf_ptr[0].actual_data_len;
@@ -665,12 +1024,15 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
                                                           me_ptr->media_fmt.num_channels,
                                                           me_ptr->media_fmt.bits_per_sample)))
             {
-               AR_MSG(DBG_ERROR_PRIO, "push_mode_write_output: De-Int - Int conversion failed");
+               PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "push_mode_write_output: De-Int - Int conversion failed");
                return result;
             }
 
 #ifndef DISABLE_CACHE_OPERATIONS
-            posal_cache_flush_v2(&write_ptr, bytes_to_copy);
+            if (!capi_ptr->is_header_enabled)
+            {
+               posal_cache_flush_v2(&write_ptr, bytes_to_copy);
+            }
 #endif
 
             bytes_copied_per_channel_now = bytes_to_copy / me_ptr->media_fmt.num_channels;
@@ -682,9 +1044,17 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
             bytes_copied_per_channel += bytes_copied_per_channel_now;
          }
 
-         temp_wr_ind = write_index;
-         write_index += bytes_to_copy;
-         pull_push_mode_check_send_watermark_event(capi_ptr, temp_wr_ind, write_index);
+         // Only check watermark if headers disabled (will check at batch end if enabled)
+         if (!capi_ptr->is_header_enabled)
+         {
+            temp_wr_ind = write_index;
+            write_index += bytes_to_copy;
+            pull_push_mode_check_send_watermark_event(capi_ptr, temp_wr_ind, write_index);
+         }
+         else
+         {
+            write_index += bytes_to_copy;
+         }
          if (write_index >= me_ptr->shared_circ_buf_size)
          {
             write_index = 0;
@@ -695,21 +1065,56 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
       if (CAPI_INTERLEAVED == me_ptr->media_fmt.data_interleaving)
       {
          module_buf_ptr[0].actual_data_len = bytes_copied;
+         capi_ptr->pcm_bytes_written += bytes_copied;
       }
       else
       {
          // for unpacked v2 only first ch buffer lens need to be used.
          module_buf_ptr[0].actual_data_len = bytes_copied_per_channel;
+         capi_ptr->pcm_bytes_written += (bytes_copied_per_channel * me_ptr->media_fmt.num_channels);
       }
    }
 
-   /** update position buffer with new index*/
-   pull_mode_update_pos_buffer(pos_buf_ptr, me_ptr->ist_priority, write_index, timestamp);
+   if (!capi_ptr->is_header_enabled)
+   {
+      /** update position buffer with new index*/
+      pull_mode_update_pos_buffer(pos_buf_ptr, me_ptr->ist_priority, write_index, timestamp);
+   }
+   else
+   {
+      capi_ptr->batch_write_index = write_index;
+      capi_stream_data_v2_t *inputv2  = (capi_stream_data_v2_t *)input[0];
+      bool_t is_batch_completed =  (input[0]->flags.marker_eos || input[0]->flags.end_of_frame) ? TRUE: FALSE;
+
+      //check for dam batch marker md
+      if (NULL != inputv2->metadata_list_ptr && !is_batch_completed)
+      {
+         module_cmn_md_list_t *node_ptr = inputv2->metadata_list_ptr;
+         module_cmn_md_list_t *next_ptr = NULL;
+         while (node_ptr)
+         {
+            module_cmn_md_t *      md_ptr              = (module_cmn_md_t *)node_ptr->obj_ptr;
+            next_ptr = node_ptr->next_ptr;
+            if (DAM_BATCH_END_MD_ID_MARKER == md_ptr->metadata_id)
+            {
+               is_batch_completed = TRUE;
+               break;
+            }
+
+            node_ptr = next_ptr;
+         }
+      }
+
+      if(is_batch_completed)
+      {
+         push_mode_end_header_batch(capi_ptr, timestamp);
+      }
+   }
 
    // raise EOS marker event
    if ((*input)->flags.marker_eos)
    {
-      AR_MSG(DBG_HIGH_PRIO, "Push module received marker EOS");
+      PULL_PUSH_MSG(miid, DBG_HIGH_PRIO, "Push module received marker EOS");
       event_sh_mem_push_mode_eos_marker_t payload;
       payload.index            = write_index;
       payload.timestamp_us_lsw = (uint32_t)timestamp;
@@ -720,16 +1125,18 @@ capi_err_t push_mode_write_output(capi_t *_pif, capi_stream_data_t *input[], cap
                                               sizeof(event_sh_mem_push_mode_eos_marker_t));
       if (CAPI_FAILED(result))
       {
-         AR_MSG(DBG_ERROR_PRIO, "pm_check_send_eos_marker_event: Failed to send water mark event!");
+         PULL_PUSH_MSG(miid, DBG_ERROR_PRIO, "pm_check_send_eos_marker_event: Failed to send water mark event!");
       }
       else
       {
-         AR_MSG(DBG_HIGH_PRIO,
-                "pm_check_send_eos_marker_event: Sent EOS Marker event to the client wrtie_index %lu, timestamp_us_lsw "
-                "%lu, timestamp_us_msw %lu",
-                write_index,
-                (uint32_t)timestamp,
-                (uint32_t)(timestamp >> 32));
+         PULL_PUSH_MSG(miid,
+                       DBG_HIGH_PRIO,
+                       "pm_check_send_eos_marker_event: Sent EOS Marker event to the client wrtie_index %lu, "
+                       "timestamp_us_lsw "
+                       "%lu, timestamp_us_msw %lu",
+                       write_index,
+                       (uint32_t)timestamp,
+                       (uint32_t)(timestamp >> 32));
       }
    }
 
@@ -753,19 +1160,26 @@ capi_err_t pull_push_mode_check_send_watermark_event_util_(capi_pm_t *capi_ptr, 
          event_sh_mem_pull_push_mode_watermark_level_t water_mark_event;
          water_mark_event.watermark_level_bytes = level;
 
-         result = capi_pm_raise_event_to_clients(capi_ptr, EVENT_ID_SH_MEM_PULL_PUSH_MODE_WATERMARK, &water_mark_event, sizeof(event_sh_mem_pull_push_mode_watermark_level_t));
+         result = capi_pm_raise_event_to_clients(capi_ptr,
+                                                 EVENT_ID_SH_MEM_PULL_PUSH_MODE_WATERMARK,
+                                                 &water_mark_event,
+                                                 sizeof(event_sh_mem_pull_push_mode_watermark_level_t));
 
          if (CAPI_FAILED(result))
          {
-            AR_MSG(DBG_ERROR_PRIO, "pm_check_send_watermark_event: Failed to send water mark event!");
+            PULL_PUSH_MSG(pm_ptr->miid,
+                          DBG_ERROR_PRIO,
+                          "pm_check_send_watermark_event: Failed to send water mark event!");
          }
          else
          {
-            AR_MSG(DBG_LOW_PRIO,
-                   "pm_check_send_watermark_event: Sent Water Mark event to the client start %lu, level %lu, end %lu",
-                   startLevel,
-                   level,
-                   endLevel);
+            PULL_PUSH_MSG(pm_ptr->miid,
+                          DBG_LOW_PRIO,
+                          "pm_check_send_watermark_event: Sent Water Mark event to the client start %lu, level %lu, "
+                          "end %lu",
+                          startLevel,
+                          level,
+                          endLevel);
          }
       }
    }
@@ -778,13 +1192,14 @@ capi_err_t pull_module_buf_mgr_extn_return_output_buf(uint32_t    handle,
                                                       uint32_t   *num_bufs,
                                                       capi_buf_t *buffer_ptr)
 {
-   pull_push_mode_t *me_ptr   = (pull_push_mode_t *)handle;
+   pull_push_mode_t *me_ptr = (pull_push_mode_t *)handle;
    if (buffer_ptr->data_ptr != me_ptr->curr_shared_buf_ptr)
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "pull_module_buf_mgr_extn_return_output_buf: Trying to return a diff buffer 0x%lx expected 0x%lx",
-             buffer_ptr->data_ptr,
-             me_ptr->curr_shared_buf_ptr);
+      PULL_PUSH_MSG(me_ptr->miid,
+                    DBG_ERROR_PRIO,
+                    "pull_module_buf_mgr_extn_return_output_buf: Trying to return a diff buffer 0x%lx expected 0x%lx",
+                    buffer_ptr->data_ptr,
+                    me_ptr->curr_shared_buf_ptr);
       return CAPI_EFAILED;
    }
 
@@ -799,15 +1214,16 @@ capi_err_t push_module_buf_mgr_extn_get_input_buf(uint32_t    handle,
                                                   uint32_t   *num_bufs,
                                                   capi_buf_t *buffer_ptr)
 {
-   pull_push_mode_t *me_ptr   = (pull_push_mode_t *)handle;
+   pull_push_mode_t *me_ptr = (pull_push_mode_t *)handle;
    // is get is called only for input ports
    sh_mem_pull_push_mode_position_buffer_t *pos_buf_ptr = me_ptr->shared_pos_buf_ptr;
    if (me_ptr->curr_shared_buf_ptr)
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "push_module_buf_mgr_extn_get_input_buf: Cannot query another buf without returning prev buffer "
-             "0x%lx",
-             me_ptr->curr_shared_buf_ptr);
+      PULL_PUSH_MSG(me_ptr->miid,
+                    DBG_ERROR_PRIO,
+                    "push_module_buf_mgr_extn_get_input_buf: Cannot query another buf without returning prev buffer "
+                    "0x%lx",
+                    me_ptr->curr_shared_buf_ptr);
       return CAPI_EFAILED;
    }
 
@@ -817,13 +1233,15 @@ capi_err_t push_module_buf_mgr_extn_get_input_buf(uint32_t    handle,
    uint32_t available_contig_frame_size = me_ptr->shared_circ_buf_size - write_index;
    if (buffer_ptr->max_data_len > available_contig_frame_size)
    {
-      AR_MSG(DBG_ERROR_PRIO,
-             "push_module_buf_mgr_extn_get_input_buf: Invalid buf size %lu, cannot find a contiguous frame circular "
-             "buf "
-             "size %lu and wr offset %lu",
-             buffer_ptr->max_data_len,
-             me_ptr->shared_circ_buf_size,
-             write_index);
+      PULL_PUSH_MSG(me_ptr->miid,
+                    DBG_ERROR_PRIO,
+                    "push_module_buf_mgr_extn_get_input_buf: Invalid buf size %lu, cannot find a contiguous frame "
+                    "circular "
+                    "buf "
+                    "size %lu and wr offset %lu",
+                    buffer_ptr->max_data_len,
+                    me_ptr->shared_circ_buf_size,
+                    write_index);
       return CAPI_EFAILED;
    }
 

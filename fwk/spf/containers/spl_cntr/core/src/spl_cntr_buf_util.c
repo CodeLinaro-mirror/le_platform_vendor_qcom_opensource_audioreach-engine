@@ -5,7 +5,7 @@
  *
  *
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *  SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
@@ -1584,7 +1584,7 @@ ar_result_t spl_cntr_deliver_output_buffer(spl_cntr_t *me_ptr, spl_cntr_ext_out_
    }
 
    topo_port_state_t ds_downgraded_state =
-      cu_get_external_output_ds_downgraded_port_state(&me_ptr->cu, &ext_out_port_ptr->gu);
+      cu_get_external_output_ds_downgraded_port_state( &ext_out_port_ptr->cu);
 
    // can happen if downstream is stopped.
    if (TOPO_PORT_STATE_STARTED != ds_downgraded_state)
@@ -1666,7 +1666,7 @@ ar_result_t spl_cntr_deliver_output_buffer(spl_cntr_t *me_ptr, spl_cntr_ext_out_
 
 #ifdef PROC_DELAY_DEBUG
    gen_topo_module_t *module_ptr = (gen_topo_module_t *)ext_out_port_ptr->gu.int_out_port_ptr->cmn.module_ptr;
-   if (APM_SUB_GRAPH_SID_VOICE_CALL == module_ptr->gu.sg_ptr->sid)
+   if (IS_VOICE_SCENARIO_ID(module_ptr->gu.sg_ptr->sid))
    {
       SPL_CNTR_MSG(me_ptr->topo.t_base.gu.log_id,
                    DBG_HIGH_PRIO,
@@ -1685,12 +1685,12 @@ ar_result_t spl_cntr_deliver_output_buffer(spl_cntr_t *me_ptr, spl_cntr_ext_out_
 
    // Move md from ext out port to data msg. We always deliver the entire buffer, so we can also deliver
    // all metadata.
-   bool_t OUT_BUF_HAS_FLUSHING_EOS_UNUSED = FALSE;
+   bool_t OUT_BUF_HAS_FLUSHING_EOS_DFG_UNUSED = FALSE;
    gen_topo_populate_metadata_for_peer_cntr(&(me_ptr->topo.t_base),
                                             &(ext_out_port_ptr->gu),
                                             &(int_out_port_ptr->md_list_ptr),
                                             &(out_buf_msg_ptr->metadata_list_ptr),
-                                            &OUT_BUF_HAS_FLUSHING_EOS_UNUSED);
+                                            &OUT_BUF_HAS_FLUSHING_EOS_DFG_UNUSED);
 
    // At this point, md_list is NULL so it cannot contain any flushing eos. Set marker to FALSE.
    int_out_port_ptr->t_base.common.sdata.flags.marker_eos = FALSE;
