@@ -7,15 +7,17 @@
  *
  *
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *  SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
 #include "gen_topo.h"
 #include "gen_topo_capi.h"
 #include "spf_ref_counter.h"
+#include "thin_topo_inline.h"
+#include "dam_batch_metadata_api.h"
 
-static ar_result_t gen_topo_metadata_create_with_tracking(uint32_t                  log_id,
+static ar_result_t gen_topo_metadata_create_with_tracking(gen_topo_t *               topo_ptr,
                                                           module_cmn_md_list_t **   md_list_pptr,
                                                           uint32_t                  size,
                                                           capi_heap_id_t            heap_id,
@@ -102,7 +104,7 @@ ar_result_t gen_topo_create_eos_for_cntr(gen_topo_t *               topo_ptr,
    }
 
    TRY(result,
-       gen_topo_metadata_create_with_tracking(topo_ptr->gu.log_id,
+       gen_topo_metadata_create_with_tracking(topo_ptr,
                                               eos_md_list_pptr,
                                               sizeof(module_cmn_md_eos_t),
                                               heap_info,
@@ -184,7 +186,7 @@ ar_result_t gen_topo_create_eos_for_cntr(gen_topo_t *               topo_ptr,
  *  1. By pause modules.
  *  2. By container if the upstream SG is suspended and self SG is started.
  */
-ar_result_t gen_topo_create_dfg_metadata(uint32_t               log_id,
+ar_result_t gen_topo_create_dfg_metadata(gen_topo_t            *topo_ptr,
                                          module_cmn_md_list_t **metadata_list_pptr,
                                          POSAL_HEAP_ID          heap_id,
                                          module_cmn_md_t **     dfg_md_pptr,
@@ -192,11 +194,12 @@ ar_result_t gen_topo_create_dfg_metadata(uint32_t               log_id,
                                          topo_media_fmt_t *     media_format_ptr)
 {
    ar_result_t result = AR_EOK;
+   uint32_t    log_id = topo_ptr->gu.log_id;
 
    if (dfg_md_pptr)
    {
       ar_result_t local_result =
-         gen_topo_metadata_create(log_id, metadata_list_pptr, 0, heap_id, FALSE /* is_out_band*/, dfg_md_pptr);
+         gen_topo_metadata_create(topo_ptr, metadata_list_pptr, 0, heap_id, FALSE /* is_out_band*/, dfg_md_pptr);
 
       if (AR_SUCCEEDED(local_result))
       {
@@ -522,6 +525,124 @@ static ar_result_t gen_topo_raise_md_tracking_event(gen_topo_tracking_md_context
    return result;
 }
 
+static ar_result_t gen_topo_raise_custom_md_tracking_event(gen_topo_tracking_md_context_t *cb_context_ptr, uint32_t ref_count)
+{
+
+   //define outgoing payload struct
+   struct module_tracking_event_payload_t
+   {
+      module_cmn_md_tracking_md_event_rsp_handle_t tracking_header;
+
+      struct tracking_data_t
+      {
+         apm_module_param_data_t header;
+         dam_batch_end_md_gen_t  data;
+      }tracking_data;
+   };
+
+   ar_result_t result = AR_EOK;
+   if (NULL == cb_context_ptr->tracking_payload_ptr)
+   {
+      TOPO_MSG(cb_context_ptr->log_id,
+               DBG_HIGH_PRIO,
+               "MD_DBG: NULL md_tracking_ptr = 0x%X in callback",
+               cb_context_ptr->tracking_payload_ptr);
+      return result;
+   }
+
+   if ((MODULE_CMN_MD_TRACKING_EVENT_POLICY_EACH == cb_context_ptr->flags.tracking_policy) ||
+       ((MODULE_CMN_MD_TRACKING_EVENT_POLICY_LAST == cb_context_ptr->flags.tracking_policy) && (0 == ref_count)))
+   {
+
+      uint32_t opcode        = EVENT_ID_MODULE_CMN_METADATA_CUSTOM_TRACKING_EVENT;
+
+      struct module_tracking_event_payload_t   md_payload_send;
+      memset(&md_payload_send, 0, sizeof(md_payload_send));
+
+      module_cmn_md_tracking_payload_t *md_tracking_ptr =
+         (module_cmn_md_tracking_payload_t *)cb_context_ptr->tracking_payload_ptr;
+
+      md_payload_send.tracking_header.tracking_payload.metadata_id            = cb_context_ptr->metadata_id;
+      md_payload_send.tracking_header.tracking_payload.source_module_instance = md_tracking_ptr->src_port;
+      md_payload_send.tracking_header.tracking_payload.module_instance_id     = cb_context_ptr->module_instance_id;
+      md_payload_send.tracking_header.tracking_payload.token_lsw              = md_tracking_ptr->token_lsw;
+      md_payload_send.tracking_header.tracking_payload.token_msw              = md_tracking_ptr->token_msw;
+      md_payload_send.tracking_header.tracking_payload.flags                  = (0 == ref_count) ? TRUE : FALSE;
+      md_payload_send.tracking_header.tracking_payload.status                 = cb_context_ptr->render_status;
+
+      md_payload_send.tracking_header.tracking_rsp_cfg                        = TRACKING_MD_EVENT_RSP_SET_CFG;
+      md_payload_send.tracking_header.tracking_event_payload_size             = sizeof(struct tracking_data_t);
+
+      /* populate the payload header */
+      dam_batch_end_md_gen_t *md_payload_ptr = (dam_batch_end_md_gen_t *)cb_context_ptr->md_payload_ptr;
+
+      if (NULL == md_payload_ptr)
+      {
+         TOPO_MSG(cb_context_ptr->log_id,
+                  DBG_ERROR_PRIO,
+                  "MD_DBG: Null metadata payload pointer for DAM_BATCH_DONE_MD_ID_MARKER");
+         return AR_EBADPARAM;
+      }
+
+      apm_module_param_data_t *payload_header_ptr = &md_payload_send.tracking_data.header;
+      dam_batch_end_md_gen_t  *payload_data_ptr   = &md_payload_send.tracking_data.data;
+
+      payload_header_ptr->module_instance_id = md_tracking_ptr->dest_port;
+      payload_header_ptr->param_id           = md_payload_ptr->param_id;
+      payload_header_ptr->param_size         = sizeof(dam_batch_end_md_gen_t);
+
+      memscpy(payload_data_ptr, payload_header_ptr->param_size, md_payload_ptr, payload_header_ptr->param_size);
+
+      TOPO_MSG(cb_context_ptr->log_id,
+               DBG_HIGH_PRIO,
+               "MD_DBG: md_event_param_id = %lu, md_param out_ch_idx = %lu",
+               payload_header_ptr->param_id, payload_data_ptr->output_port_idx);
+
+      bool_t is_registered = FALSE;
+      (void)__gpr_cmd_is_registered(md_tracking_ptr->src_port, &is_registered);
+      // if stream close is done prior to render EOS, then client must not receive render EOS
+      if (is_registered)
+      {
+         gpr_cmd_alloc_send_t args;
+         args.src_domain_id = md_tracking_ptr->src_domain_id;
+         args.dst_domain_id = md_tracking_ptr->dst_domain_id;
+         args.src_port      = md_tracking_ptr->src_port;
+         args.dst_port      = md_tracking_ptr->dest_port;
+         args.token         = md_tracking_ptr->token_msw;
+         args.opcode        = opcode;
+         args.payload       = &md_payload_send;
+         args.payload_size  = sizeof(struct module_tracking_event_payload_t);
+         args.client_data   = 0;
+         __gpr_cmd_alloc_send(&args);
+
+         TOPO_MSG(cb_context_ptr->log_id,
+                  DBG_HIGH_PRIO,
+                  "MD_DBG: Raising tracking event for MD_ID (0x%lx) (src port 0x%lX), render status = %lu, "
+                  "policy 0x%x ref_count = %lu cmd_opcode  0x%lX",
+                  cb_context_ptr->metadata_id,
+                  md_tracking_ptr->src_port,
+                  cb_context_ptr->render_status,
+                  cb_context_ptr->flags.tracking_policy,
+                  ref_count,
+                  opcode);
+      }
+      else
+      {
+         TOPO_MSG(cb_context_ptr->log_id,
+                  DBG_HIGH_PRIO,
+                  "MD_DBG: Not Raising tracking event for MD_ID (0x%lx) as client has closed the source module. "
+                  "(src port 0x%lX), render status = %lu, policy 0x%x  ref_count = %lu cmd_opcode  0x%lX",
+                  cb_context_ptr->metadata_id,
+                  md_tracking_ptr->src_port,
+                  cb_context_ptr->render_status,
+                  cb_context_ptr->flags.tracking_policy,
+                  ref_count,
+                  opcode);
+      }
+   }
+   return result;
+}
+
 void gen_topo_send_md_render_status(void *context_ptr, uint32_t ref_count)
 {
    gen_topo_tracking_md_context_t *cb_context_ptr = (gen_topo_tracking_md_context_t *)context_ptr;
@@ -534,6 +655,11 @@ void gen_topo_send_md_render_status(void *context_ptr, uint32_t ref_count)
        (MODULE_CMN_MD_TRACKING_USE_CUSTOM_EVENT == cb_context_ptr->tracking_payload_ptr->flags.requires_custom_event))
    {
       gen_topo_raise_eos_tracking_event(cb_context_ptr, ref_count);
+   }
+   else if((DAM_BATCH_END_MD_ID_MARKER == cb_context_ptr->metadata_id) &&
+           (MODULE_CMN_MD_TRACKING_USE_CUSTOM_EVENT == cb_context_ptr->tracking_payload_ptr->flags.requires_custom_event))
+   {
+      gen_topo_raise_custom_md_tracking_event(cb_context_ptr, ref_count);
    }
    else
    {
@@ -653,7 +779,7 @@ ar_result_t gen_topo_raise_tracking_event(gen_topo_t *          topo_ptr,
 /**
  * function to create meta-data with tracking feature.
  */
-static ar_result_t gen_topo_metadata_create_with_tracking(uint32_t                  log_id,
+static ar_result_t gen_topo_metadata_create_with_tracking(gen_topo_t               *topo_ptr,
                                                           module_cmn_md_list_t **   md_list_pptr,
                                                           uint32_t                  size,
                                                           capi_heap_id_t            heap_id,
@@ -666,6 +792,7 @@ static ar_result_t gen_topo_metadata_create_with_tracking(uint32_t              
    INIT_EXCEPTION_HANDLING
    uint32_t md_size = sizeof(module_cmn_md_t);
    uint32_t md_tracking_heap_id;
+   uint32_t log_id = topo_ptr->gu.log_id;
 
    bool_t tracking_ref_created = FALSE;
    bool_t tracking_mode        = FALSE;
@@ -734,6 +861,22 @@ static ar_result_t gen_topo_metadata_create_with_tracking(uint32_t              
          TOPO_MSG(log_id, DBG_ERROR_PRIO, "MD_DBG: Failed to create a metadata tracking pointer");
          THROW(ar_result, result);
       }
+
+      module_cmn_md_tracking_payload_t *md_tracking_payload_ptr = &tracking_info_ptr->tracking_payload;
+
+      if( 0 == md_tracking_payload_ptr->src_domain_id && MODULE_CMN_MD_IS_INTERNAL_CLIENT_MD == flags.is_client_metadata)
+      {
+         uint32_t         host_domain;
+         __gpr_cmd_get_host_domain_id(&host_domain);
+
+         md_tracking_payload_ptr->src_domain_id = host_domain;
+      }
+
+      if(0 ==  md_tracking_payload_ptr->dst_domain_id)
+      {
+         md_tracking_payload_ptr->dst_domain_id = md_tracking_payload_ptr->src_domain_id;
+      }
+
       md_ptr->tracking_ptr = md_tracking_ref_ptr;
       memscpy(md_ptr->tracking_ptr,
               sizeof(module_cmn_md_tracking_payload_t),
@@ -750,15 +893,13 @@ static ar_result_t gen_topo_metadata_create_with_tracking(uint32_t              
                             (POSAL_HEAP_ID)heap_id.heap_id,
                             TRUE /* use pool */));
 
-#if defined(METADATA_DEBUGGING)
    spf_list_get_tail_node((spf_list_node_t *)*md_list_pptr, &tail_node_ptr);
+#if defined(METADATA_DEBUGGING)
    TOPO_MSG(log_id,
             DBG_MED_PRIO,
             "MD_DBG: Metadata create: spf_list_node_t 0x%p host md_ptr 0x%p",
             tail_node_ptr,
             md_ptr);
-#else
-   (void)tail_node_ptr;
 #endif
 
    md_ptr->metadata_flag = flags;
@@ -784,6 +925,13 @@ static ar_result_t gen_topo_metadata_create_with_tracking(uint32_t              
       MFREE_NULLIFY(md_ptr);
       // No errors after inserting to linked list
    }
+
+   // Increment md counter as the last step, so that if there was any error MD counter incremented can be skipped.
+   if (ar_result == AR_EOK)
+   {
+      thin_topo_incr_active_md_nodes(topo_ptr, (module_cmn_md_list_t *)tail_node_ptr);
+   }
+
    return ar_result;
 }
 
@@ -815,7 +963,7 @@ capi_err_t gen_topo_capi_metadata_create_with_tracking(void *                   
    TOPO_MSG(topo_ptr->gu.log_id, DBG_LOW_PRIO, "MD_DBG: create metadata 0x%lx", metadata_id);
 #endif
 
-   ar_result = gen_topo_metadata_create_with_tracking(topo_ptr->gu.log_id,
+   ar_result = gen_topo_metadata_create_with_tracking(topo_ptr,
                                                       md_list_pptr,
                                                       size,
                                                       heap_id,

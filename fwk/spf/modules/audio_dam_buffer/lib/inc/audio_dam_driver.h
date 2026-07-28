@@ -324,7 +324,8 @@ ar_result_t audio_dam_stream_read(audio_dam_stream_reader_t *reader_handle,
                                   capi_buf_t *               output_buf_arr,
                                   bool_t *                   output_buf_ts_is_valid,
                                   int64_t *                  output_buf_ts,
-                                  uint32_t *                 output_buf_len_in_us);
+                                  uint32_t *                 output_buf_len_in_us,
+                                  bool_t *                   is_batch_sent);
 
 /*
  * Adjusts the read pointer
@@ -398,6 +399,12 @@ static inline bool_t audio_dam_driver_is_virtual_writer_mode(audio_dam_stream_re
 {
    return reader_handle->virt_buf_ptr ? TRUE : FALSE;
 }
+
+ar_result_t audio_dam_get_stream_reader_pending_bytes(audio_dam_stream_reader_t *reader_handle, uint32_t *unread_bytes);
+ar_result_t audio_dam_force_set_pending_bytes(audio_dam_stream_reader_t *reader_handle);
+
+/* check if the batching requirement will be met in the current process, if yes trigger Island exit if duty_cycling is enabled */
+bool_t audio_dam_if_batching_req_met(audio_dam_stream_reader_t *reader_handle);
 
 #ifdef __cplusplus
 }

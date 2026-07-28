@@ -3,7 +3,7 @@
  * \brief
  *
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *  SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
@@ -63,6 +63,7 @@ const cu_cntr_vtable_t pt_cntr_cntr_funcs = {
 
    .dcm_topo_set_param 						   = gen_cntr_dcm_topo_set_param,
    .handle_cntr_period_change 				= gen_cntr_handle_cntr_period_change,
+   .handle_cntr_set_calibration_ops_done     = NULL,
 
    .initiate_duty_cycle_island_entry         = gen_cntr_initiate_duty_cycle_island_entry,
    .initiate_duty_cycle_island_exit          = gen_cntr_initiate_duty_cycle_island_exit,
@@ -101,6 +102,8 @@ const topo_to_cntr_vtable_t topo_to_pt_cntr_vtable = {
 
    .notify_ts_disc_evt                          = gen_cntr_notify_timestamp_discontinuity_event_cb,
    .module_buffer_access_event                  = pt_cntr_handle_module_buffer_access_event,
+
+   .check_if_any_ext_in_has_to_preserve_prebuffer = NULL,
 };
 // clang-format on
 
@@ -110,9 +113,10 @@ ar_result_t pt_cntr_post_operate_on_ext_in_port(void                      *base_
                                                 gu_ext_in_port_t         **ext_in_port_pptr,
                                                 spf_cntr_sub_graph_list_t *spf_sg_list_ptr)
 {
-   ar_result_t             result          = AR_EOK;
-   gen_cntr_ext_in_port_t *ext_in_port_ptr = (gen_cntr_ext_in_port_t *)*ext_in_port_pptr;
-   gen_topo_input_port_t  *in_port_ptr     = (gen_topo_input_port_t *)ext_in_port_ptr->gu.int_in_port_ptr;
+   ar_result_t            result          = AR_EOK;
+   pt_cntr_t             *me_ptr          = (pt_cntr_t *)base_ptr;
+   pt_cntr_ext_in_port_t *ext_in_port_ptr = (pt_cntr_ext_in_port_t *)*ext_in_port_pptr;
+   gen_topo_input_port_t *in_port_ptr     = (gen_topo_input_port_t *)ext_in_port_ptr->gc.gu.int_in_port_ptr;
 
    if (TOPO_SG_OP_STOP & sg_ops)
    {
@@ -122,6 +126,26 @@ ar_result_t pt_cntr_post_operate_on_ext_in_port(void                      *base_
    {
       // todo: check if the module's first input is getting started, then stop pushing zeros from the next module's
       // input
+
+      // if only the external input is just opened for the first time, its possible that the buffer was never assigned
+      // to this port check if the port has valid MF and doesnt have the buffer, then we should trigger the buffer
+      // assignment and proc list update logic
+      //
+      // Note: if the port was stopped and getting started, then buffer may have been already assigned and going from
+      // stop to start will not trigger proc list update or buffer size change because the ext input rely on the self SG
+      // state which might have been started and buffer is already assigned on the first port start.
+      if (TOPO_PORT_STATE_STARTED == in_port_ptr->common.state && (TRUE == in_port_ptr->common.flags.is_mf_valid) &&
+          (NULL == ext_in_port_ptr->topo_in_buf_ptr))
+      {
+         CU_MSG(me_ptr->gc.cu.gu_ptr->log_id,
+                DBG_LOW_PRIO,
+                "cu_handle_sg_mgmt_cmd. sg_op %lu handling post operate on external input id 0x%lx",
+                sg_ops,
+                ext_in_port_ptr->gc.gu.int_in_port_ptr->cmn.id);
+
+         result |= pt_cntr_update_module_process_list(me_ptr);
+         result |= pt_cntr_assign_port_buffers(me_ptr);
+      }
    }
 
    /* If ext input port receives both a self and peer stop/flush from upstream (any order)
@@ -338,20 +362,17 @@ static ar_result_t pt_cntr_check_n_validate_module_static_properties(pt_cntr_t *
 ar_result_t pt_cntr_init_ext_in_port(void *base_ptr, gu_ext_in_port_t *gu_ext_port_ptr)
 {
    ar_result_t            result          = AR_EOK;
-   pt_cntr_ext_in_port_t *ext_in_port_ptr = (pt_cntr_ext_in_port_t *)gu_ext_port_ptr;
-   pt_cntr_input_port_t  *in_port_ptr     = (pt_cntr_input_port_t *)ext_in_port_ptr->gc.gu.int_in_port_ptr;
-   pt_cntr_module_t      *module_ptr      = (pt_cntr_module_t *)in_port_ptr->gc.gu.cmn.module_ptr;
 
    result = gen_cntr_init_ext_in_port(base_ptr, gu_ext_port_ptr);
 
-   in_port_ptr->sdata_ptr                                       = &in_port_ptr->gc.common.sdata;
-   module_ptr->in_port_sdata_pptr[in_port_ptr->gc.gu.cmn.index] = &in_port_ptr->gc.common.sdata;
-
 #ifdef VERBOSE_DEBUGGING
    pt_cntr_t             *me_ptr          = (pt_cntr_t *)base_ptr;
+   pt_cntr_ext_in_port_t *ext_in_port_ptr = (pt_cntr_ext_in_port_t *)gu_ext_port_ptr;
+   pt_cntr_input_port_t  *in_port_ptr     = (pt_cntr_input_port_t *)ext_in_port_ptr->gc.gu.int_in_port_ptr;
+   pt_cntr_module_t      *module_ptr      = (pt_cntr_module_t *)in_port_ptr->gc.gu.cmn.module_ptr;
    GEN_CNTR_MSG(me_ptr->gc.topo.gu.log_id,
                 DBG_LOW_PRIO,
-                "Assigned self sdata ptr 0x%lx to module 0x%lx in_port_id 0x%x",
+                "Assigned sdata ptr 0x%lx to module 0x%lx in_port_id 0x%x",
                 in_port_ptr->sdata_ptr,
                 module_ptr->gc.topo.gu.module_instance_id,
                 in_port_ptr->gc.gu.cmn.id);
@@ -362,20 +383,17 @@ ar_result_t pt_cntr_init_ext_in_port(void *base_ptr, gu_ext_in_port_t *gu_ext_po
 ar_result_t pt_cntr_init_ext_out_port(void *base_ptr, gu_ext_out_port_t *gu_ext_port_ptr)
 {
    ar_result_t             result           = AR_EOK;
-   pt_cntr_ext_out_port_t *ext_out_port_ptr = (pt_cntr_ext_out_port_t *)gu_ext_port_ptr;
-   pt_cntr_output_port_t  *out_port_ptr     = (pt_cntr_output_port_t *)ext_out_port_ptr->gc.gu.int_out_port_ptr;
-   pt_cntr_module_t       *module_ptr       = (pt_cntr_module_t *)out_port_ptr->gc.gu.cmn.module_ptr;
 
    result = gen_cntr_init_ext_out_port(base_ptr, gu_ext_port_ptr);
 
-   out_port_ptr->sdata_ptr                                        = &out_port_ptr->gc.common.sdata;
-   module_ptr->out_port_sdata_pptr[out_port_ptr->gc.gu.cmn.index] = &out_port_ptr->gc.common.sdata;
-
 #ifdef VERBOSE_DEBUGGING
    pt_cntr_t              *me_ptr           = (pt_cntr_t *)base_ptr;
+   pt_cntr_ext_out_port_t *ext_out_port_ptr = (pt_cntr_ext_out_port_t *)gu_ext_port_ptr;
+   pt_cntr_output_port_t  *out_port_ptr     = (pt_cntr_output_port_t *)ext_out_port_ptr->gc.gu.int_out_port_ptr;
+   pt_cntr_module_t       *module_ptr       = (pt_cntr_module_t *)out_port_ptr->gc.gu.cmn.module_ptr;
    GEN_CNTR_MSG(me_ptr->gc.topo.gu.log_id,
                 DBG_LOW_PRIO,
-                "Assigned self sdata ptr 0x%lx to module 0x%lx out_port_id 0x%x",
+                "Assigned sdata ptr 0x%lx to module 0x%lx out_port_id 0x%x",
                 out_port_ptr->sdata_ptr,
                 module_ptr->gc.topo.gu.module_instance_id,
                 out_port_ptr->gc.gu.cmn.id);
@@ -453,7 +471,7 @@ ar_result_t pt_cntr_validate_topo_at_open(pt_cntr_t *me_ptr)
 
 /** Checks media format and threshold.
       1. Checks if all the modules raised same threshold. If there are multiple threshold modules, returns error.
-      2. TODO: need to check supported media format for each port as well .*/
+      2. Check supported media format for each port as well .*/
 ar_result_t pt_cntr_validate_media_fmt_thresh(pt_cntr_t *me_ptr)
 {
    ar_result_t result = AR_EOK;
@@ -534,6 +552,71 @@ ar_result_t pt_cntr_create_module(gen_topo_t            *topo_ptr,
 
    CATCH(result, GEN_CNTR_MSG_PREFIX, me_ptr->topo.gu.log_id)
    {
+   }
+
+   return result;
+}
+
+// some data ports could be added through async gu, and those ports would get a valid port index only after calling
+// gu_async_create_finish(), PTC has dependency on the port indices hence newly opened ports should be handled
+// under critical section through this function.
+ar_result_t pt_cntr_init_data_ports_post_async_create_finish(gen_topo_t *topo_ptr)
+{
+   ar_result_t result = AR_EOK;
+
+   gu_t *gu_ptr = get_gu_ptr_for_current_command_context(&topo_ptr->gu);
+
+   // Consider only updated modules, for new or default status modules data port scratch will assigned during
+   // prepare. for updated modules scratch info needs to be updated here itself since the module may be part of
+   // the proc list and there is a chance that module process can be called before prepare is received.
+
+   // New ports may be added. need to set it to module.
+   for (gu_ext_in_port_list_t *ext_in_port_list_ptr = gu_ptr->ext_in_port_list_ptr; (NULL != ext_in_port_list_ptr);
+        LIST_ADVANCE(ext_in_port_list_ptr))
+   {
+      pt_cntr_input_port_t *in_port_ptr =
+         (pt_cntr_input_port_t *)ext_in_port_list_ptr->ext_in_port_ptr->int_in_port_ptr;
+
+      pt_cntr_module_t *module_ptr =
+         (pt_cntr_module_t *)ext_in_port_list_ptr->ext_in_port_ptr->int_in_port_ptr->cmn.module_ptr;
+
+      if (NULL == in_port_ptr->sdata_ptr)
+      {
+         in_port_ptr->sdata_ptr                                       = &in_port_ptr->gc.common.sdata;
+         module_ptr->in_port_sdata_pptr[in_port_ptr->gc.gu.cmn.index] = &in_port_ptr->gc.common.sdata;
+
+         GEN_CNTR_MSG(topo_ptr->gu.log_id,
+                      DBG_LOW_PRIO,
+                      "Assigning self sdata ptr 0x%lx to module 0x%lx external in_port_id 0x%x",
+                      in_port_ptr->sdata_ptr,
+                      module_ptr->gc.topo.gu.module_instance_id,
+                      in_port_ptr->gc.gu.cmn.id);
+      }
+   }
+
+   // New ports may be added. need to intialize sdata ptr for the ext port
+   for (gu_ext_out_port_list_t *ext_out_port_list_ptr = gu_ptr->ext_out_port_list_ptr;
+        (NULL != ext_out_port_list_ptr);
+        LIST_ADVANCE(ext_out_port_list_ptr))
+   {
+      pt_cntr_output_port_t *out_port_ptr =
+         (pt_cntr_output_port_t *)ext_out_port_list_ptr->ext_out_port_ptr->int_out_port_ptr;
+
+      pt_cntr_module_t *module_ptr =
+         (pt_cntr_module_t *)ext_out_port_list_ptr->ext_out_port_ptr->int_out_port_ptr->cmn.module_ptr;
+
+      if (NULL == out_port_ptr->sdata_ptr)
+      {
+         out_port_ptr->sdata_ptr                                        = &out_port_ptr->gc.common.sdata;
+         module_ptr->out_port_sdata_pptr[out_port_ptr->gc.gu.cmn.index] = &out_port_ptr->gc.common.sdata;
+
+         GEN_CNTR_MSG(topo_ptr->gu.log_id,
+                      DBG_LOW_PRIO,
+                      "Assigning self sdata ptr 0x%lx to module 0x%lx out_port_id 0x%x",
+                      out_port_ptr->sdata_ptr,
+                      module_ptr->gc.topo.gu.module_instance_id,
+                      out_port_ptr->gc.gu.cmn.id);
+      }
    }
 
    return result;

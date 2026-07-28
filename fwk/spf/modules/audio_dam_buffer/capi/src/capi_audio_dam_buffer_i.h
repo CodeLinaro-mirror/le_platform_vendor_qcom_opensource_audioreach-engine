@@ -25,6 +25,8 @@
 #include "capi_intf_extn_data_port_operation.h"
 #include "capi_intf_extn_metadata.h"
 #include "other_metadata.h"
+#include "dam_batch_metadata_api.h"
+#include "platform_internal_dcm_if.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,6 +67,12 @@ extern "C" {
 #define CAPI_AUDIO_DAM_HIGH_KPPS 500000 // KPPS vote needed when gate is opened and ftrt data is being drained
 
 #define ALIGN_8_BYTES(a) ((a + 7) & (0xFFFFFFF8))
+
+typedef enum eos_type_t{
+   INVALID_EOS_TYPE = 0,
+   FLUSHING_EOS,
+   NON_FLUSHING_EOS
+}eos_type_t;
 
 typedef struct imcl_port_info_t
 {
@@ -141,8 +149,11 @@ typedef struct
    uint32_t is_peer_heap_id_valid;
    /* indicates if a valid heap ID is sent by a peer to this output, through IMCL */
 
+   uint32_t ftrt_unread_data_len_in_us;
+   uint32_t bytes_before_eos;
    POSAL_HEAP_ID peer_heap_id;
    /* Heap id received from IMCL peer*/
+   audio_dam_gate_ctrl_op_t gate_ctrl_op;
 
    bool_t is_peer_aad;
    /** set to TRUE if IMCL peer is AAD module*/
@@ -159,8 +170,29 @@ typedef struct
    bool_t is_drain_history;
    // gate is opened to drain all the history data. gate will auto close when all history data is sent out.
 
-   uint32_t ftrt_unread_data_len_in_us;
    // amount of KW data buffered at the time of gate open
+
+   /* flag to indicate downstream module is done processing and ready to enter island */
+
+   /*bytes to drain before sending EOS in case of input port stop e.g., device switch in ASR case*/
+
+   bool_t pending_eos;
+   /* indicate if the EOS is yet to sent */
+   bool_t is_dcm_duty_cycling_enabled;
+   bool_t ready_for_island_entry;
+
+   /*Indicate if metadata needs to be sent after every batch in batching mode*/
+   bool_t handle_md_batch_tracking;
+   /* ref count of end metadata sent for island entry condition*/
+   uint32_t ref_count_batch_end_md;
+
+   /* Indicate if partial data needs to be drained if eos is received*/
+   bool_t  is_partial_batch_drain_enabled;
+   bool_t  is_handle_partial_drain;
+
+   /*Handle frame size mismatch*/
+   bool_t  send_dfg_md;
+
 } _aud_dam_output_port_info;
 
 typedef struct
@@ -243,6 +275,8 @@ typedef struct capi_audio_dam_t
 
    bool_t is_tp_enabled;                // TP can be disabled dynamicaly when all gates are closed
    bool_t cannot_toggle_to_default_tgp; // set to TRUE if one of the IMCL peer is Acoustic Activity Detection module
+
+   dcm_island_control_payload_t payload; // Payload used for sending entry or exit to dcm
 
 } capi_audio_dam_t;
 
@@ -335,6 +369,12 @@ capi_err_t capi_audio_dam_imcl_handle_gate_open(capi_audio_dam_t *              
 
 capi_err_t capi_audio_dam_imcl_handle_gate_close(capi_audio_dam_t *me_ptr, uint32_t op_arr_index);
 
+capi_err_t capi_audio_dam_imcl_trigger_island_entry(capi_audio_dam_t *me_ptr,
+                                                   uint32_t          op_arr_index,
+                                                   vw_imcl_header_t *header_ptr);
+
+bool_t capi_audio_dam_check_island_entry_cond(capi_audio_dam_t* me_ptr);
+
 /////////////////////////////////////  GENERIC UTILS ///////////////////////////////////////
 
 capi_err_t capi_check_and_close_the_gate(capi_audio_dam_t *me_ptr, uint32_t op_arr_index, bool_t is_destroy);
@@ -392,8 +432,15 @@ capi_err_t capi_audio_dam_buffer_set_properties(capi_t *_pif, capi_proplist_t *p
 capi_err_t capi_audio_dam_buffer_get_properties(capi_t *_pif, capi_proplist_t *props_ptr);
 
 capi_err_t capi_dam_insert_flushing_eos_at_out_port(capi_audio_dam_t   *me_ptr,
+                                                   capi_stream_data_t *output,
+                                                   bool_t              skip_voting_on_eos,
+                                                   eos_type_t          eos_type);
+
+capi_err_t capi_dam_insert_tracking_md_at_out_port(capi_audio_dam_t   *me_ptr,
                                                     capi_stream_data_t *output,
-                                                    bool_t              skip_voting_on_eos);
+                                                    uint32_t            output_port_index,
+                                                    bool_t              send_dfg_md,
+                                                    bool_t              is_eos_case);
 
 capi_vtbl_t *capi_audio_dam_buffer_get_vtable();
 
@@ -422,6 +469,13 @@ static inline bool_t capi_audio_dam_is_mf_valid_and_fixed_point(capi_audio_dam_t
 {
    return (me_ptr->is_input_media_fmt_set && (CAPI_FIXED_POINT == me_ptr->operating_mf.fmt));
 }
+
+capi_err_t capi_dam_duty_cycling_buf_send_message_to_dcm(capi_audio_dam_t *me_ptr, uint32_t spf_msg_cmd_dcm_req_code);
+
+capi_err_t capi_audio_dam_handle_pending_eos(capi_audio_dam_t *me_ptr,
+                                             capi_stream_data_t *output[],
+                                             uint32_t arr_idx,
+                                             uint32_t port_index);
 
 #ifdef __cplusplus
 }

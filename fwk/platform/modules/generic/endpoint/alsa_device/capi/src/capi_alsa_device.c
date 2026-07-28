@@ -16,7 +16,7 @@ static capi_err_t capi_alsa_device_common_init(capi_t *_pif, capi_proplist_t *in
 
 static capi_err_t capi_alsa_device_process_set_properties(capi_alsa_device_t *me_ptr, capi_proplist_t *proplist_ptr);
 
-static capi_err_t capi_alsa_device_process_get_properties(capi_alsa_device_t *me_ptr, capi_proplist_t *proplist_ptr);
+static capi_err_t capi_alsa_device_process_get_properties(capi_alsa_device_t *me_ptr, capi_proplist_t *proplist_ptr, uint32_t dir);
 
 static capi_err_t capi_alsa_device_get_mf(capi_alsa_device_t *me_ptr, capi_media_fmt_v2_t *media_fmt_ptr);
 
@@ -27,6 +27,75 @@ static capi_err_t capi_alsa_device_raise_media_fmt_event(capi_alsa_device_t *me_
 capi_err_t capi_alsa_device_process_source(capi_t *_pif, capi_stream_data_t *input[], capi_stream_data_t *output[]);
 
 capi_err_t capi_alsa_device_process_sink(capi_t *_pif, capi_stream_data_t *input[], capi_stream_data_t *output[]);
+
+/* Thread function that polls for hardware buffer availability and signals framework */
+static void capi_alsa_device_dma_wait_thread(void *arg)
+{
+   capi_alsa_device_t *me_ptr = (capi_alsa_device_t *)arg;
+
+   AR_MSG(DBG_HIGH_PRIO, "CAPI_ALSA_DEVICE: DMA wait thread started for instance 0x%lx", me_ptr->iid);
+
+   bool_t needs_recovery = FALSE;
+
+   while (!me_ptr->exit_thread)
+   {
+      /* Wait until process_sink/source completes before calling pcm_wait or
+       * pcm_prepare. Ensures no concurrent PCM operations on the same handle. */
+      posal_nmutex_lock(me_ptr->data_ready_lock);
+      while (me_ptr->data_ready && !me_ptr->exit_thread)
+      {
+         posal_condvar_wait(me_ptr->process_done_cond, me_ptr->data_ready_lock);
+      }
+      posal_nmutex_unlock(me_ptr->data_ready_lock);
+
+      if (me_ptr->exit_thread) break;
+
+      /* Recover from XRUN here — after confirming process_source is not
+       * concurrently executing pcm_read on the same PCM handle. */
+      if (needs_recovery)
+      {
+         needs_recovery = FALSE;
+         if (AR_EOK == alsa_device_driver_prepare(&me_ptr->alsa_device_driver))
+         {
+            /* Source (capture): pcm_start required to restart DMA.
+             * Sink (playback): stream restarts automatically on next pcm_write. */
+            if (ALSA_DEVICE_SOURCE == me_ptr->direction)
+            {
+               alsa_device_driver_start(&me_ptr->alsa_device_driver);
+            }
+         }
+      }
+
+      ar_result_t result = alsa_device_driver_wait(&me_ptr->alsa_device_driver);
+      if (result != AR_EOK)
+      {
+         if (!me_ptr->exit_thread)
+         {
+            AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: pcm_wait failed in DMA thread, result=%d", result);
+            /* Set recovery flag for non-timeout errors (XRUN etc.).
+             * Timeout means no data yet — just retry pcm_wait. */
+            if (AR_ETIMEOUT != result)
+            {
+               needs_recovery = TRUE;
+            }
+         }
+         continue;
+      }
+
+      /* Mark hardware data available and signal the framework */
+      posal_nmutex_lock(me_ptr->data_ready_lock);
+      me_ptr->data_ready = TRUE;
+      posal_nmutex_unlock(me_ptr->data_ready_lock);
+
+      if (me_ptr->signal_ptr && me_ptr->enable_stm)
+      {
+         posal_signal_send(me_ptr->signal_ptr);
+      }
+   }
+
+   me_ptr->is_thread_running = FALSE;
+   AR_MSG(DBG_HIGH_PRIO, "CAPI_ALSA_DEVICE: DMA wait thread exiting for instance 0x%lx", me_ptr->iid);
+}
 
 /*------------------------------------------------------------------------
   Function name: capi_alsa_device_source_init
@@ -48,7 +117,7 @@ capi_err_t capi_alsa_device_source_get_static_properties(
    capi_proplist_t *init_set_properties,
    capi_proplist_t *static_properties)
 {
-   return capi_alsa_device_process_get_properties((capi_alsa_device_t *)NULL, static_properties);
+   return capi_alsa_device_process_get_properties((capi_alsa_device_t *)NULL, static_properties, ALSA_DEVICE_SOURCE);
 }
 
 /*------------------------------------------------------------------------
@@ -71,7 +140,7 @@ capi_err_t capi_alsa_device_sink_get_static_properties(
    capi_proplist_t *init_set_properties,
    capi_proplist_t *static_properties)
 {
-   return capi_alsa_device_process_get_properties((capi_alsa_device_t *)NULL, static_properties);
+   return capi_alsa_device_process_get_properties((capi_alsa_device_t *)NULL, static_properties, ALSA_DEVICE_SINK);
 }
 
 /*------------------------------------------------------------------------
@@ -101,6 +170,16 @@ static capi_err_t capi_alsa_device_common_init(capi_t *_pif, capi_proplist_t *in
    // Cache direction
    me_ptr->direction = dir;
 
+   // Initialize thread management fields
+   me_ptr->dma_wait_thread = NULL;
+   me_ptr->is_thread_running = FALSE;
+   me_ptr->exit_thread = FALSE;
+
+   // Initialize read buffer fields (for SOURCE direction)
+   me_ptr->read_buffer = NULL;
+   me_ptr->read_buffer_size = 0;
+   me_ptr->data_ready = FALSE;
+
    //Init alsa_device_driver
    alsa_device_driver_init(&me_ptr->alsa_device_driver);
 
@@ -112,7 +191,20 @@ static capi_err_t capi_alsa_device_common_init(capi_t *_pif, capi_proplist_t *in
       return capi_result;
    }
 
-   return capi_result;
+   if (AR_EOK != posal_nmutex_create(&me_ptr->data_ready_lock, (POSAL_HEAP_ID)me_ptr->heap_mem.heap_id))
+   {
+      AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Failed to create data_ready_lock");
+      return CAPI_EFAILED;
+   }
+
+   if (AR_EOK != posal_condvar_create(&me_ptr->process_done_cond, (POSAL_HEAP_ID)me_ptr->heap_mem.heap_id))
+   {
+      posal_nmutex_destroy(&me_ptr->data_ready_lock);
+      AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Failed to create process_done_cond");
+      return CAPI_EFAILED;
+   }
+
+   return CAPI_EOK;
 }
 
 /*------------------------------------------------------------------------
@@ -259,6 +351,159 @@ static capi_err_t capi_alsa_device_process_set_properties(capi_alsa_device_t *me
         }
         case CAPI_CUSTOM_PROPERTY:
         {
+            capi_custom_property_t *cust_prop_ptr    = (capi_custom_property_t *)payload_ptr->data_ptr;
+            void *                  cust_payload_ptr = (void *)(cust_prop_ptr + 1);
+            switch (cust_prop_ptr->secondary_prop_id)
+            {
+               case FWK_EXTN_PROPERTY_ID_STM_TRIGGER:
+               {
+                  if (payload_ptr->actual_data_len < sizeof(capi_custom_property_t) + sizeof(capi_prop_stm_trigger_t))
+                  {
+                     AR_MSG(DBG_ERROR_PRIO,
+                            "Property id 0x%lx Insufficient payload size %d",
+                            (uint32_t)cust_prop_ptr->secondary_prop_id,
+                            payload_ptr->actual_data_len);
+                     return CAPI_EBADPARAM;
+                  }
+                  capi_prop_stm_trigger_t *trig_ptr = (capi_prop_stm_trigger_t *)cust_payload_ptr;
+                  me_ptr->signal_ptr                = trig_ptr->signal_ptr;
+                  me_ptr->enable_stm                = TRUE;
+                  AR_MSG(DBG_HIGH_PRIO,
+                         "FWK_EXTN_PROPERTY_ID_STM_TRIGGER enable_stm %d", me_ptr->enable_stm);
+                  break;
+               }
+               case FWK_EXTN_PROPERTY_ID_STM_CTRL:
+               {
+                  if (payload_ptr->actual_data_len < sizeof(capi_custom_property_t) + sizeof(capi_prop_stm_ctrl_t))
+                  {
+                     AR_MSG(DBG_ERROR_PRIO,
+                            "Property id 0x%lx Bad param size %lu",
+                            (uint32_t)cust_prop_ptr->secondary_prop_id,
+                            payload_ptr->actual_data_len);
+                     capi_result |= CAPI_ENEEDMORE;
+                     break;
+                  }
+                  capi_prop_stm_ctrl_t *timer_en = (capi_prop_stm_ctrl_t *)cust_payload_ptr;
+                  me_ptr->enable_stm             = timer_en->enable;
+                  AR_MSG(DBG_HIGH_PRIO,
+                         "FWK_EXTN_PROPERTY_ID_STM_CTRL enable_stm %d", me_ptr->enable_stm);
+
+                  if (me_ptr->enable_stm && me_ptr->state != ALSA_DEVICE_INTERFACE_START)
+                  {
+                     if (!me_ptr->ep_mf_received)
+                     {
+                        AR_MSG(DBG_ERROR_PRIO,
+                               "CAPI_ALSA_DEVICE: STM enable received before MF config, ignoring");
+                        break;
+                     }
+                     capi_result = alsa_device_driver_open(&me_ptr->alsa_device_driver, me_ptr->direction);
+                     if (capi_result != AR_EOK)
+                     {
+                        AR_MSG(DBG_ERROR_PRIO, "alsa_device_driver_open failed with error code %d", capi_result);
+                        return CAPI_EFAILED;
+                     }
+
+                     /* Sync int_samples_per_period with the actual period_size the ALSA driver
+                      * negotiated — it may differ from the requested size due to HW constraints. */
+                     uint32_t actual_period_size = me_ptr->alsa_device_driver.config.period_size;
+                     if (actual_period_size != me_ptr->int_samples_per_period)
+                     {
+                        AR_MSG(DBG_HIGH_PRIO,
+                               "CAPI_ALSA_DEVICE: ALSA adjusted period_size: requested=%d actual=%d frames",
+                               me_ptr->int_samples_per_period, actual_period_size);
+                        me_ptr->int_samples_per_period = actual_period_size;
+                        capi_result = capi_alsa_device_raise_thresh_delay_events(me_ptr);
+                        if (CAPI_EOK != capi_result)
+                        {
+                           AR_MSG(DBG_ERROR_PRIO,
+                                  "CAPI_ALSA_DEVICE: Failed to raise threshold event after period_size adjustment");
+                        }
+                     }
+
+                     capi_result = alsa_device_driver_prepare(&me_ptr->alsa_device_driver);
+                     if (capi_result != AR_EOK)
+                     {
+                        AR_MSG(DBG_ERROR_PRIO,
+                              "CAPI_ALSA_DEVICE: alsa_device_driver_prepare failed with error code %d",
+                              capi_result);
+                        alsa_device_driver_close(&me_ptr->alsa_device_driver);
+                        return CAPI_EFAILED;
+                     }
+
+                     if (ALSA_DEVICE_SOURCE == me_ptr->direction)
+                     {
+                        capi_result = alsa_device_driver_start(&me_ptr->alsa_device_driver);
+                        if (capi_result != AR_EOK)
+                        {
+                           AR_MSG(DBG_ERROR_PRIO,
+                                 "CAPI_ALSA_DEVICE: alsa_device_driver_start failed with error code %d",
+                                 capi_result);
+                           alsa_device_driver_close(&me_ptr->alsa_device_driver);
+                           return CAPI_EFAILED;
+                        }
+                     }
+
+                     if (ALSA_DEVICE_SOURCE == me_ptr->direction && NULL == me_ptr->read_buffer)
+                     {
+                        struct pcm_config *config = &me_ptr->alsa_device_driver.config;
+                        me_ptr->read_buffer_size = config->period_size * config->channels * me_ptr->bytes_per_channel;
+
+                        me_ptr->read_buffer = (int8_t *)posal_memory_malloc(
+                              me_ptr->read_buffer_size,
+                              (POSAL_HEAP_ID)me_ptr->heap_mem.heap_id);
+
+                        if (NULL == me_ptr->read_buffer)
+                        {
+                           AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Failed to allocate read_buffer, size=%d",
+                                    me_ptr->read_buffer_size);
+                           alsa_device_driver_close(&me_ptr->alsa_device_driver);
+                           return CAPI_ENOMEMORY;
+                        }
+
+                        AR_MSG(DBG_HIGH_PRIO, "CAPI_ALSA_DEVICE: Allocated read_buffer, size=%d bytes",
+                                 me_ptr->read_buffer_size);
+                     }
+
+                     if (!me_ptr->is_thread_running)
+                     {
+                        me_ptr->exit_thread = FALSE;
+
+                        ar_result_t thread_result = posal_thread_launch(&me_ptr->dma_wait_thread,
+                                                                        "ALSA_DMA_WAIT",
+                                                                        ALSA_DEVICE_DMA_THREAD_STACK_SIZE,
+                                                                        0,
+                                                                        capi_alsa_device_dma_wait_thread,
+                                                                        (void *)me_ptr,
+                                                                        (POSAL_HEAP_ID)me_ptr->heap_mem.heap_id);
+
+                        if (AR_EOK != thread_result)
+                        {
+                           AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Failed to create DMA wait thread");
+                           if (me_ptr->read_buffer)
+                           {
+                              posal_memory_free(me_ptr->read_buffer);
+                              me_ptr->read_buffer = NULL;
+                           }
+                           alsa_device_driver_stop(&me_ptr->alsa_device_driver);
+                           alsa_device_driver_close(&me_ptr->alsa_device_driver);
+                           return CAPI_EFAILED;
+                        }
+
+                        me_ptr->is_thread_running = TRUE;
+                        AR_MSG(DBG_HIGH_PRIO, "CAPI_ALSA_DEVICE: DMA wait thread created successfully");
+                     }
+
+                     me_ptr->state = ALSA_DEVICE_INTERFACE_START;
+                  }
+                  break;
+               }
+               default:
+               {
+                  AR_MSG(DBG_HIGH_PRIO, "Unknown Custom Property[%d]", cust_prop_ptr->secondary_prop_id);
+                  capi_result |= CAPI_EUNSUPPORTED;
+                  break;
+               }
+            }
             break;
         }
         case CAPI_MODULE_INSTANCE_ID:
@@ -297,16 +542,23 @@ static capi_err_t capi_alsa_device_process_set_properties(capi_alsa_device_t *me
   Function name: capi_alsa_device_process_get_properties
   DESCRIPTION: Function to get the properties for the alsa_device module
  * -----------------------------------------------------------------------*/
-static capi_err_t capi_alsa_device_process_get_properties(capi_alsa_device_t *me_ptr, capi_proplist_t *proplist_ptr)
+static capi_err_t capi_alsa_device_process_get_properties(capi_alsa_device_t *me_ptr, capi_proplist_t *proplist_ptr, uint32_t dir)
 {
    capi_err_t capi_result = CAPI_EOK;
    uint32_t i = 0;
 
    capi_basic_prop_t mod_prop;
+   uint32_t          num_intf_extns;
+   uint32_t          fwk_extn_ids[1] = { 0 };
    mod_prop.init_memory_req = sizeof(capi_alsa_device_t);
    mod_prop.stack_size = ALSA_DEVICE_STACK_SIZE;
-   mod_prop.num_fwk_extns = ALSA_DEVICE_NUM_FRAMEWORK_EXTENSIONS;
-   mod_prop.fwk_extn_ids_arr = NULL;
+
+   num_intf_extns  = ALSA_DEVICE_NUM_FRAMEWORK_EXTENSIONS;
+   /* Both source and sink declare FWK_EXTN_STM for signal-triggered operation. */
+   fwk_extn_ids[0] = FWK_EXTN_STM;
+
+   mod_prop.num_fwk_extns      = num_intf_extns;
+   mod_prop.fwk_extn_ids_arr   = fwk_extn_ids;
    mod_prop.is_inplace = 0;       // NA
    mod_prop.req_data_buffering = 0; // NA
    mod_prop.max_metadata_size = 0;  // NA
@@ -362,7 +614,6 @@ static capi_err_t capi_alsa_device_process_get_properties(capi_alsa_device_t *me
             {
                AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Not valid media format size %d", payload_ptr->actual_data_len);
                return CAPI_ENEEDMORE;
-               break;
             }
 
             capi_media_fmt_v2_t *media_fmt_ptr = (capi_media_fmt_v2_t *)(payload_ptr->data_ptr);
@@ -555,8 +806,13 @@ capi_err_t capi_alsa_device_end(capi_t *_pif)
 
    capi_alsa_device_t *me_ptr = (capi_alsa_device_t *)_pif;
 
-   if (&me_ptr->alsa_device_driver)
+   if (me_ptr->state == ALSA_DEVICE_INTERFACE_START)
    {
+      if (me_ptr->is_thread_running)
+      {
+         me_ptr->exit_thread = TRUE;
+      }
+
       ar_result = alsa_device_driver_stop(&me_ptr->alsa_device_driver);
       if (ar_result != AR_EOK)
       {
@@ -564,6 +820,22 @@ capi_err_t capi_alsa_device_end(capi_t *_pif)
                "CAPI_ALSA_DEVICE: alsa_device_driver_stop failed with error code %d",
                ar_result);
          capi_result = CAPI_EFAILED;
+      }
+
+      /* Unblock DMA thread if it is waiting on process_done_cond for process_sink/source.
+       * pcm_stop() handles the case where it is blocked inside pcm_wait(). */
+      posal_nmutex_lock(me_ptr->data_ready_lock);
+      me_ptr->data_ready = FALSE;
+      posal_nmutex_unlock(me_ptr->data_ready_lock);
+      posal_condvar_signal(me_ptr->process_done_cond);
+
+      /* Join the DMA thread now that both blocking paths are unblocked. */
+      if (me_ptr->dma_wait_thread != NULL)
+      {
+         ar_result_t thread_result = AR_EOK;
+         posal_thread_join(me_ptr->dma_wait_thread, &thread_result);
+         me_ptr->dma_wait_thread = NULL;
+         AR_MSG(DBG_HIGH_PRIO, "CAPI_ALSA_DEVICE: DMA wait thread joined");
       }
 
       ar_result = alsa_device_driver_close(&me_ptr->alsa_device_driver);
@@ -575,6 +847,17 @@ capi_err_t capi_alsa_device_end(capi_t *_pif)
          capi_result = CAPI_EFAILED;
       }
    }
+
+   if (me_ptr->read_buffer)
+   {
+      posal_memory_free(me_ptr->read_buffer);
+      me_ptr->read_buffer = NULL;
+      me_ptr->read_buffer_size = 0;
+      AR_MSG(DBG_HIGH_PRIO, "CAPI_ALSA_DEVICE: read_buffer freed");
+   }
+
+   posal_condvar_destroy(&me_ptr->process_done_cond);
+   posal_nmutex_destroy(&me_ptr->data_ready_lock);
 
    me_ptr->state = ALSA_DEVICE_INTERFACE_STOP;
    me_ptr->vtbl.vtbl_ptr = NULL;
@@ -866,7 +1149,8 @@ capi_err_t capi_alsa_device_set_param(capi_t *_pif,
 capi_err_t capi_alsa_device_get_properties(capi_t *_pif,
                                  capi_proplist_t *proplist_ptr)
 {
-   return capi_alsa_device_process_get_properties((capi_alsa_device_t *)_pif, proplist_ptr);
+   capi_alsa_device_t * me_ptr = (capi_alsa_device_t *) _pif;
+   return capi_alsa_device_process_get_properties(me_ptr, proplist_ptr, me_ptr->direction);
 }
 
 /*------------------------------------------------------------------------
@@ -903,7 +1187,7 @@ capi_err_t capi_alsa_device_process_sink(capi_t *_pif, capi_stream_data_t *input
    num_samples_per_intr = me_ptr->int_samples_per_period;
    num_channels = me_ptr->num_channels;
    bytes_per_channel = me_ptr->bytes_per_channel;
-   bytes_per_sample = me_ptr->bit_width / 8;
+   bytes_per_sample = me_ptr->bytes_per_channel;
    word_size = bytes_per_sample << 3;
    total_bytes = bytes_per_channel * num_samples_per_intr * num_channels;
    expected_ip_len_per_ch = bytes_per_channel * num_samples_per_intr;
@@ -918,30 +1202,18 @@ capi_err_t capi_alsa_device_process_sink(capi_t *_pif, capi_stream_data_t *input
 
    if (me_ptr->state != ALSA_DEVICE_INTERFACE_START)
    {
-      ar_result = alsa_device_driver_open(&me_ptr->alsa_device_driver, me_ptr->direction);
-      if (ar_result != AR_EOK)
-      {
-         AR_MSG(DBG_ERROR_PRIO, "alsa_device_driver_open failed with error code %d", ar_result);
-         return CAPI_EFAILED;
-      }
-      AR_MSG(DBG_HIGH_PRIO,
-             "CAPI_ALSA_DEVICE: alsa_device_driver_open success rc: %d",
-             ar_result);
-
-      ar_result = alsa_device_driver_prepare(&me_ptr->alsa_device_driver);
-      if (ar_result != AR_EOK)
-      {
-         AR_MSG(DBG_ERROR_PRIO,
-                "CAPI_ALSA_DEVICE: alsa_device_driver_prepare failed with error code %d",
-                ar_result);
-         return CAPI_EFAILED;
-      }
-      AR_MSG(DBG_HIGH_PRIO,
-             "CAPI_ALSA_DEVICE: alsa_device_driver_prepare success rc: %d",
-             ar_result);
-
-      me_ptr->state =ALSA_DEVICE_INTERFACE_START;
+      AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Sink not started");
+      return CAPI_EFAILED;
    }
+
+   posal_nmutex_lock(me_ptr->data_ready_lock);
+   if (!me_ptr->data_ready)
+   {
+      posal_nmutex_unlock(me_ptr->data_ready_lock);
+      AR_MSG(DBG_LOW_PRIO, "CAPI_ALSA_DEVICE: Spurious trigger, no data ready");
+      return CAPI_EOK;
+   }
+   posal_nmutex_unlock(me_ptr->data_ready_lock);
 
    // Size checks
    is_input_available = capi_alsa_device_check_data_sufficiency(*input,
@@ -973,7 +1245,7 @@ capi_err_t capi_alsa_device_process_sink(capi_t *_pif, capi_stream_data_t *input
          {
             need_to_underrun = TRUE;
             is_input_available = FALSE;
-            AR_MSG_ISLAND(DBG_ERROR_PRIO, "CAPI: Failed to interleave data");
+            AR_MSG(DBG_ERROR_PRIO, "CAPI: Failed to interleave data");
          }
       }
    }
@@ -1021,16 +1293,23 @@ capi_err_t capi_alsa_device_process_sink(capi_t *_pif, capi_stream_data_t *input
 
    total_bytes_copied = min(scratch_buf.actual_data_len, scratch_buf.max_data_len);
 
-   if (&me_ptr->alsa_device_driver)
+   ar_result = alsa_device_driver_write(&me_ptr->alsa_device_driver, me_ptr->out_data_buffer, total_bytes_copied);
+   if (ar_result != AR_EOK)
    {
-      ar_result = alsa_device_driver_write(&me_ptr->alsa_device_driver, me_ptr->out_data_buffer, total_bytes_copied);
-      if (ar_result != AR_EOK)
-      {
-         AR_MSG(DBG_ERROR_PRIO, "alsa_device_driver_write failed with error code %d", ar_result);
-         return CAPI_EFAILED;
-      }
-      AR_MSG_ISLAND(DBG_HIGH_PRIO, "CAPI: alsa_device_driver_write successful, total bytes copied: %d", total_bytes_copied);
+      AR_MSG(DBG_ERROR_PRIO, "alsa_device_driver_write failed with error code %d", ar_result);
+      posal_nmutex_lock(me_ptr->data_ready_lock);
+      me_ptr->data_ready = FALSE;
+      posal_nmutex_unlock(me_ptr->data_ready_lock);
+      posal_condvar_signal(me_ptr->process_done_cond);
+      return CAPI_EFAILED;
    }
+
+   posal_nmutex_lock(me_ptr->data_ready_lock);
+   me_ptr->data_ready = FALSE;
+   posal_nmutex_unlock(me_ptr->data_ready_lock);
+   posal_condvar_signal(me_ptr->process_done_cond);
+
+   AR_MSG(DBG_LOW_PRIO, "CAPI: alsa_device_driver_write successful, total bytes copied: %d", total_bytes_copied);
 
    return capi_result;
 }
@@ -1136,11 +1415,145 @@ bool_t capi_alsa_device_check_data_sufficiency(capi_stream_data_t *input,
 
 /*---------------------------------------------------------------------
   Function name: capi_alsa_device_process_source
-  DESCRIPTION: Processes an input buffer and generates an output buffer.
+  DESCRIPTION: Processes capture (source) - reads PCM data directly
+               into output buffers via pcm_read
   -----------------------------------------------------------------------*/
 capi_err_t capi_alsa_device_process_source(capi_t *_pif, capi_stream_data_t *input[], capi_stream_data_t *output[])
 {
-   capi_err_t capi_result = CAPI_EUNSUPPORTED;
+   capi_err_t capi_result = CAPI_EOK;
+   capi_alsa_device_t *me_ptr = (capi_alsa_device_t *)_pif;
+   uint16_t port = 0;
+   uint32_t total_bytes = 0;
+   uint16_t num_channels = 0;
+   uint16_t bytes_per_sample = 0;
+   uint32_t word_size = 0;
+
+   if (me_ptr->state != ALSA_DEVICE_INTERFACE_START)
+   {
+      AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Source not started");
+      return CAPI_EFAILED;
+   }
+
+   if (!output || !output[port] || !output[port]->buf_ptr)
+   {
+      AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Invalid output buffer");
+      return CAPI_EBADPARAM;
+   }
+
+   posal_nmutex_lock(me_ptr->data_ready_lock);
+   if (!me_ptr->data_ready)
+   {
+      posal_nmutex_unlock(me_ptr->data_ready_lock);
+      /* Spurious trigger: data_ready is FALSE, meaning the DMA thread has not yet
+       * returned from pcm_wait. It is therefore not blocked on process_done_cond,
+       * so no signal is needed here. */
+      AR_MSG(DBG_LOW_PRIO, "CAPI_ALSA_DEVICE: Spurious trigger, no data ready");
+      return CAPI_EOK;
+   }
+   /* data_ready is TRUE: DMA thread has completed pcm_wait and is now blocked on
+    * process_done_cond waiting for this function to complete pcm_read. The lock
+    * is released before pcm_read since the DMA thread cannot proceed until
+    * process_done_cond is signaled at the end of this function. */
+   posal_nmutex_unlock(me_ptr->data_ready_lock);
+
+   num_channels = me_ptr->num_channels;
+   bytes_per_sample = me_ptr->bytes_per_channel;
+   word_size = bytes_per_sample << 3;
+   total_bytes = me_ptr->read_buffer_size;
+
+   if (CAPI_DEINTERLEAVED_UNPACKED == me_ptr->gen_cntr_alsa_device_media_fmt.format.data_interleaving)
+   {
+      uint32_t bytes_per_ch = total_bytes / num_channels;
+
+      for (uint32_t ch = 0; ch < num_channels; ch++)
+      {
+         if (output[port]->buf_ptr[ch].max_data_len < bytes_per_ch)
+         {
+            AR_MSG(DBG_ERROR_PRIO,
+                   "CAPI_ALSA_DEVICE: Output buffer too small ch %d. Required: %d, Available: %d",
+                   ch, bytes_per_ch, output[port]->buf_ptr[ch].max_data_len);
+            posal_nmutex_lock(me_ptr->data_ready_lock);
+            me_ptr->data_ready = FALSE;
+            posal_nmutex_unlock(me_ptr->data_ready_lock);
+            posal_condvar_signal(me_ptr->process_done_cond);
+            return CAPI_ENOMEMORY;
+         }
+      }
+
+      ar_result_t result = alsa_device_driver_read(&me_ptr->alsa_device_driver,
+                                                   me_ptr->read_buffer,
+                                                   total_bytes);
+      if (result != AR_EOK)
+      {
+         AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: pcm_read failed in process_source, result=%d", result);
+         posal_nmutex_lock(me_ptr->data_ready_lock);
+         me_ptr->data_ready = FALSE;
+         posal_nmutex_unlock(me_ptr->data_ready_lock);
+         posal_condvar_signal(me_ptr->process_done_cond);
+         return CAPI_EFAILED;
+      }
+
+      capi_buf_t intlv_buf;
+      intlv_buf.data_ptr = me_ptr->read_buffer;
+      intlv_buf.actual_data_len = total_bytes;
+      intlv_buf.max_data_len = me_ptr->read_buffer_size;
+
+      if (AR_EOK != spf_intlv_to_deintlv(&intlv_buf,
+                                         output[port]->buf_ptr,
+                                         num_channels,
+                                         word_size))
+      {
+         AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: Failed to deinterleave data");
+         posal_nmutex_lock(me_ptr->data_ready_lock);
+         me_ptr->data_ready = FALSE;
+         posal_nmutex_unlock(me_ptr->data_ready_lock);
+         posal_condvar_signal(me_ptr->process_done_cond);
+         return CAPI_EFAILED;
+      }
+
+      for (uint32_t ch = 0; ch < num_channels; ch++)
+      {
+         output[port]->buf_ptr[ch].actual_data_len = bytes_per_ch;
+      }
+   }
+   else // CAPI_INTERLEAVED
+   {
+      if (output[port]->buf_ptr[0].max_data_len < total_bytes)
+      {
+         AR_MSG(DBG_ERROR_PRIO,
+                "CAPI_ALSA_DEVICE: Output buffer too small. Required: %d, Available: %d",
+                total_bytes,
+                output[port]->buf_ptr[0].max_data_len);
+         posal_nmutex_lock(me_ptr->data_ready_lock);
+         me_ptr->data_ready = FALSE;
+         posal_nmutex_unlock(me_ptr->data_ready_lock);
+         posal_condvar_signal(me_ptr->process_done_cond);
+         return CAPI_ENOMEMORY;
+      }
+
+      ar_result_t result = alsa_device_driver_read(&me_ptr->alsa_device_driver,
+                                                   output[port]->buf_ptr[0].data_ptr,
+                                                   total_bytes);
+      if (result != AR_EOK)
+      {
+         AR_MSG(DBG_ERROR_PRIO, "CAPI_ALSA_DEVICE: pcm_read failed in process_source, result=%d", result);
+         posal_nmutex_lock(me_ptr->data_ready_lock);
+         me_ptr->data_ready = FALSE;
+         posal_nmutex_unlock(me_ptr->data_ready_lock);
+         posal_condvar_signal(me_ptr->process_done_cond);
+         return CAPI_EFAILED;
+      }
+
+      output[port]->buf_ptr[0].actual_data_len = total_bytes;
+   }
+
+   posal_nmutex_lock(me_ptr->data_ready_lock);
+   me_ptr->data_ready = FALSE;
+   posal_nmutex_unlock(me_ptr->data_ready_lock);
+   posal_condvar_signal(me_ptr->process_done_cond);
+
+   AR_MSG(DBG_LOW_PRIO, "CAPI_ALSA_DEVICE: Process source successful, bytes: %d", total_bytes);
+
    return capi_result;
 }
 
@@ -1300,6 +1713,24 @@ ar_result_t capi_alsa_device_set_hw_ep_mf_cfg(param_id_hw_ep_mf_t *alsa_device_c
 
    me_ptr->num_channels = alsa_device_cfg_ptr->num_channels;
 
+   /* Initialize data_format for SOURCE direction (for SINK it's set via CAPI_INPUT_MEDIA_FORMAT_V2) */
+   if (ALSA_DEVICE_SOURCE == me_ptr->direction)
+   {
+      if (DATA_FORMAT_COMPR_OVER_PCM_PACKETIZED == me_ptr->data_format)
+      {
+         me_ptr->gen_cntr_alsa_device_media_fmt.header.format_header.data_format = CAPI_COMPR_OVER_PCM_PACKETIZED;
+         me_ptr->gen_cntr_alsa_device_media_fmt.format.data_interleaving         = CAPI_INTERLEAVED;
+      }
+      else
+      {
+         me_ptr->gen_cntr_alsa_device_media_fmt.header.format_header.data_format = CAPI_FIXED_POINT;
+         me_ptr->gen_cntr_alsa_device_media_fmt.format.data_interleaving         = CAPI_DEINTERLEAVED_UNPACKED;
+      }
+
+      AR_MSG(DBG_HIGH_PRIO, "ALSA Device: Initialized data_format for SOURCE direction: %d",
+             me_ptr->gen_cntr_alsa_device_media_fmt.header.format_header.data_format);
+   }
+
    if (me_ptr->frame_size_cfg_received)
    {
       // setting operating frame_size
@@ -1320,6 +1751,15 @@ ar_result_t capi_alsa_device_set_hw_ep_mf_cfg(param_id_hw_ep_mf_t *alsa_device_c
       me_ptr->int_samples_per_period = me_ptr->sample_rate / NUM_MS_PER_SEC;
    }
    alsa_device_driver_set_cfg(&me_ptr->alsa_device_driver, alsa_device_cfg_ptr);
+
+   /* If frame size arrived before MF, period_size was computed with rate=0.
+    * Recompute now that config->rate is valid. */
+   if (me_ptr->frame_size_cfg_received)
+   {
+      param_id_frame_size_factor_t frame_size_cfg = { .frame_size_factor = me_ptr->frame_size_ms };
+      alsa_device_driver_set_frame_size_cfg(&frame_size_cfg, &me_ptr->alsa_device_driver);
+   }
+
    // Set flag to true
    me_ptr->ep_mf_received = TRUE;
 
