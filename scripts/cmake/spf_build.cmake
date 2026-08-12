@@ -5,9 +5,6 @@
    @brief
    This file defines the functions to collect the source files and include paths.
 
-   @copyright
-   Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-   SPDX-License-Identifier: BSD-3-Clause-Clear
 ]]
 
 #[[

@@ -5,9 +5,6 @@
    @brief
    This file defines functions to collect source files and include paths.
 
-   @copyright
-   Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-   SPDX-License-Identifier: BSD-3-Clause-Clear
 ]]
 
 function(spf_parse_kconfig)
