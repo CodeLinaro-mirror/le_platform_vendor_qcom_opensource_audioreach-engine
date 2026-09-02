@@ -14,8 +14,8 @@
  *    These definitions are common between capi metadata (transferred through
  *    modules within a container) and gk metadata (transferred between containers).
  *
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 

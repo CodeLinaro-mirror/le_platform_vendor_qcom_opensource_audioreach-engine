@@ -4,8 +4,8 @@
   @brief This file contains function declarations internal to CAPI
          Pull and Push mode module
 
-  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-  SPDX-License-Identifier: BSD-3-Clause-Clear
+  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+  SPDX-License-Identifier: BSD-3-Clause
 ==============================================================================*/
 #ifndef PULL_MODE_H
 #define PULL_MODE_H

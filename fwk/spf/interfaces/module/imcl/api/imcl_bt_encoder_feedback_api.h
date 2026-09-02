@@ -2,8 +2,8 @@
  @file imcl_bt_encoder_feedback_api.h
  @brief This file contains API's to receive/send encoder feedback
 
- Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- SPDX-License-Identifier: BSD-3-Clause-Clear
+ Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ SPDX-License-Identifier: BSD-3-Clause
 
  ====================================================================== */
 

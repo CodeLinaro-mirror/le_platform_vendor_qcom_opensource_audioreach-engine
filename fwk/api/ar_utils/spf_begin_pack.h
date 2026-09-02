@@ -4,8 +4,8 @@
  *  	 This file defines pack attributes for different compilers to be used to pack spf API data structures
  * 
  * \copyright
- *    Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *    SPDX-License-Identifier: BSD-3-Clause-Clear
+ *    Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *    SPDX-License-Identifier: BSD-3-Clause
  */
 
  

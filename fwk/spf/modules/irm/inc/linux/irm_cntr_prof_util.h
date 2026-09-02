@@ -4,8 +4,8 @@
 @brief IRM container profile util.
 
 ================================================================================
-Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-SPDX-License-Identifier: BSD-3-Clause-Clear
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+SPDX-License-Identifier: BSD-3-Clause
 ==============================================================================*/
 
 #ifndef _IRM_CNTR_PROF_UTIL_H_

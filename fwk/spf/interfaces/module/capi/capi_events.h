@@ -6,8 +6,8 @@
  * \brief
  *      This file defines the events that can be raised by a module using the CAPI interface.
  *
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include "capi_types.h"

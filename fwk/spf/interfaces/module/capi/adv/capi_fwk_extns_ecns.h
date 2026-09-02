@@ -8,8 +8,8 @@
  *     Frame work extensions for Echo canceller and Noise suppression (ECNS)
  *    This file defines a framework extensions and corresponding private propeties needed for ECNS in voice.
  *
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifdef __cplusplus

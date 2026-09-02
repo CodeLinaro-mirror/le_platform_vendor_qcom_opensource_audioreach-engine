@@ -5,8 +5,8 @@
  *  	  This file contains a utilities to work with linux signal
  *
  * \copyright
- *      Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *      SPDX-License-Identifier: BSD-3-Clause-Clear
+ *      Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *      SPDX-License-Identifier: BSD-3-Clause
  */
 #ifndef POSAL_LINUX_SIGNAL_H
 #define POSAL_LINUX_SIGNAL_H

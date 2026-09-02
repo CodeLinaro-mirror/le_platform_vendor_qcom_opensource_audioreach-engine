@@ -1,5 +1,3 @@
-# Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
-# SPDX-License-Identifier: BSD-3-Clause-Clear
 
 set(example_gain_sources
 	${LIB_ROOT}/capi/src/capi_example_gain_module.c

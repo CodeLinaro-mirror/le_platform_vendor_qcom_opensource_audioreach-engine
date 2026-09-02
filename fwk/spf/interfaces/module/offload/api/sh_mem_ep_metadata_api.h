@@ -4,8 +4,8 @@
  *        This file contains APIs for sharing the metadata by the shared memory End point modules.
  * 
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef SH_MEM_EP_METADATA_API_H_

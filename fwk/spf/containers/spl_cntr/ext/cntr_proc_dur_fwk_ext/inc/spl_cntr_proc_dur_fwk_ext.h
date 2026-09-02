@@ -5,8 +5,8 @@
  * \file spl_cntr_frame_dur_fwk_ext.h
  * \brief
  *  This file contains utility functions for FWK_EXTN_CONTAINER_PROC_DURATION
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 // clang-format on
 

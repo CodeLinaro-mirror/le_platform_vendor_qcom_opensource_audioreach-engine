@@ -6,8 +6,8 @@
  *     This file contains function definitions for INTF_EXTN_MIMO_MODULE_PROCESS_STATE
 
  * \copyright
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include "capi_intf_extn_mimo_module_process_state.h"

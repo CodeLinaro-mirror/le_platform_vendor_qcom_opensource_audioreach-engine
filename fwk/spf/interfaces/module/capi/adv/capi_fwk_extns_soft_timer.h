@@ -11,8 +11,8 @@
  *    the timer is not expected to be precise since it will run in the same thread
  *    as the framework process() call and have lower priority
  *
- *  Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include "capi_types.h"

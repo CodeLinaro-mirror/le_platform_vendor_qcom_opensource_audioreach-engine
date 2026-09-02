@@ -9,7 +9,7 @@
  *
  * \copyright
  *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
- *  SPDX-License-Identifier: BSD-3-Clause-Clear
+ *  SPDX-License-Identifier: BSD-3-Clause
  */
 
 #include "gen_cntr.h"

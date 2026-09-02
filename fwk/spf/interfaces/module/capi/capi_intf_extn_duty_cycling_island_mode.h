@@ -6,8 +6,8 @@
  * @brief Interface extensions related to Duty Cycling LPI use cases (currently used for BT A2DP LPI) and
  * propagation of gapless module fill status for island entry to DCM.
  *
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifdef __cplusplus

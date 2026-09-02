@@ -5,8 +5,8 @@
  * @file  capi_intf_extn_prop_is_rt_port_property.h
  * @brief intf_extns related to propagation of port properties real time (RT) or non real time (NRT).
  *
- * Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifdef __cplusplus
